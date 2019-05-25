@@ -10,6 +10,7 @@
 [submodule "docker/mongodb"]
 	path = docker/mongodb
 	url = git@github.com:m9rco/mongodb.git
+	branch = master
 [submodule "docker/go"]
 	path = docker/go
 	url = git@github.com:m9rco/go.git
