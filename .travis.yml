@@ -1,0 +1,71 @@
+sudo: required
+
+services:
+  - docker
+
+env:
+  DOCKER_COMPOSE_VERSION: 1.8.1
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - sudo mv docker-compose /usr/local/bin
+  - chmod +x /usr/local/bin/docker-compose
+
+  - docker version
+
+  - docker build --no-cache -t m9rco/alpine-php:7.3 -f docker-build/php/7.3/Dockerfile docker-build/php/7.3/
+  - docker build --no-cache -t m9rco/alpine-php:7.3-dev -f docker-build/php/7.3/Dockerfile.dev docker-build/php/7.3/
+  - docker build --no-cache -t m9rco/alpine-php:7.3-front -f docker-build/php/7.3/Dockerfile.front docker-build/php/7.3/
+
+  - docker build --no-cache -t m9rco/alpine-php:7.2 -f docker-build/php/7.2/Dockerfile docker-build/php/7.2/
+  - docker build --no-cache -t m9rco/alpine-php:7.2-dev -f docker-build/php/7.2/Dockerfile.dev docker-build/php/7.2/
+  - docker build --no-cache -t m9rco/alpine-php:7.2-front -f docker-build/php/7.2/Dockerfile.front docker-build/php/7.2/
+
+  - docker build --no-cache -t m9rco/alpine-php:7.1 -f docker-build/php/7.1/Dockerfile docker-build/php/7.1/
+  - docker build --no-cache -t m9rco/alpine-php:7.1-dev -f docker-build/php/7.1/Dockerfile.dev docker-build/php/7.1/
+  - docker build --no-cache -t m9rco/alpine-php:7.1-front -f docker-build/php/7.1/Dockerfile.front docker-build/php/7.1/
+
+  - docker build --no-cache -t m9rco/alpine-php:5.6 -f docker-build/php/5.6/Dockerfile docker-build/php/5.6/
+
+  - docker run --name php7.3 -d -v $PWD:/app m9rco/alpine-php:7.3
+  - docker run --name php7.3-dev -d -v $PWD:/app m9rco/alpine-php:7.3-dev
+  - docker run --name php7.3-front -d -v $PWD:/app m9rco/alpine-php:7.3-front
+
+  - docker run --name php7.2 -d -v $PWD:/app m9rco/alpine-php:7.2
+  - docker run --name php7.2-dev -d -v $PWD:/app m9rco/alpine-php:7.2-dev
+  - docker run --name php7.2-front -d -v $PWD:/app m9rco/alpine-php:7.2-front
+
+  - docker run --name php7.1 -d -v $PWD:/app m9rco/alpine-php:7.1
+  - docker run --name php7.1-dev -d -v $PWD:/app m9rco/alpine-php:7.1-dev
+  - docker run --name php7.1-front -d -v $PWD:/app m9rco/alpine-php:7.1-front
+
+  - docker run --name php5 -d -v $PWD:/app m9rco/alpine-php:5.6
+
+script:
+  - docker exec php7.3 php -v
+  - docker exec php7.3 sh -c "php -v | grep OPcache"
+  - docker exec php7.3 sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 256M"
+
+  - docker exec php7.2 php -v
+  - docker exec php7.2 sh -c "php -v | grep OPcache"
+  - docker exec php7.2 sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 256M"
+
+  - docker exec php7.2-dev sh -c "php -v | grep Xdebug"
+  - docker exec php7.2-dev composer --version
+  - docker exec php7.2-dev sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 1G"
+
+  - docker exec php7.3-dev sh -c "php -v | grep Xdebug"
+  - docker exec php7.3-dev composer --version
+  - docker exec php7.3-dev sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 1G"
+
+  - docker exec php7.1 php -v
+  - docker exec php7.1 sh -c "php -v | grep OPcache"
+  - docker exec php7.1 sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 256M"
+
+  - docker exec php7.1-dev sh -c "php -v | grep Xdebug"
+  - docker exec php7.1-dev composer --version
+  - docker exec php7.1-dev sh -c "echo \"<?php echo ini_get('memory_limit');\" | php | grep 1G"
+
+  - docker exec php7.1-front node -v
+  - docker exec php7.1-front yarn --version
