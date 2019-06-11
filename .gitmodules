@@ -14,3 +14,6 @@
 [submodule "docker/go"]
 	path = docker/go
 	url = git@github.com:m9rco/go.git
+[submodule "docker/c-cpp"]
+	path = docker/c-cpp
+	url = git@github.com:m9rco/c-cpp.git
