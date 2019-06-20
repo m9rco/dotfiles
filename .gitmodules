@@ -17,3 +17,6 @@
 [submodule "docker/c-cpp"]
 	path = docker/c-cpp
 	url = git@github.com:m9rco/c-cpp.git
+[submodule "docker/metron"]
+	path = docker/metron
+	url = git@github.com:m9rco/metron.git
