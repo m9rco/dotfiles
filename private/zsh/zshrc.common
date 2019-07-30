@@ -1,0 +1,36 @@
+# load brew
+if [ -x /usr/local/bin/brew ]; then
+  # Homebrew for OS X
+  eval $(/usr/local/bin/brew shellenv)
+elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+  # Linuxbrew for Linux
+  eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)
+fi;
+# add mirror config for homebrew bottoles in mac
+if [ `uname` = "Darwin" ]; then
+  export HOMEBREW_BOTTLE_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles
+fi;
+
+# add mirror config for electron
+export ELECTRON_MIRROR=http://npm.taobao.org/mirrors/electron/
+# add mirror config for sass binary
+export SASS_BINARY_SITE=http://npm.taobao.org/mirrors/node-sass
+# add mirror config for puppeteer
+export PUPPETEER_DOWNLOAD_HOST=https://npm.taobao.org/mirrors
+# add mirror config for node-sqlite3
+export SQLITE3_BINARY_SITE=http://npm.taobao.org/mirrors/sqlite3
+# add mirror config for nvm
+export NVM_NODEJS_ORG_MIRROR=http://npm.taobao.org/mirrors/node
+# Set NVM_DIR if it isn't already defined
+[[ -z "$NVM_DIR" ]] && export NVM_DIR="$HOME/.nvm"
+# load nvm
+if [ -n "$HOMEBREW_PREFIX" ] && [ -s "$HOMEBREW_PREFIX/opt/nvm/nvm.sh" ]; then
+  source "$HOMEBREW_PREFIX/opt/nvm/nvm.sh"  # This loads nvm
+elif [ -s "$NVM_DIR/nvm.sh" ]; then
+  source "$NVM_DIR/nvm.sh"
+fi;
+
+if [ -d "$HOME/.cargo/bin" ]; then
+  # add PATH config for cargo for rust
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi;

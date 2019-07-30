@@ -20,3 +20,6 @@
 [submodule "docker/metron"]
 	path = docker/metron
 	url = git@github.com:m9rco/metron.git
+[submodule "docker/alpine-nginx-php"]
+	path = docker/alpine-nginx-php
+	url = git@github.com:m9rco/alpine-nginx-php.git
