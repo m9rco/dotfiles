@@ -1,0 +1,60 @@
+// Place your settings in this file to overwrite the default settings
+{
+  //-------- Editor configuration --------
+  "editor.fontFamily": "'Source Code Pro', Menlo, Monaco, 'Courier New', monospace",
+  "editor.rulers": [80, 100],
+  "editor.tabSize": 2,
+  "editor.find.seedSearchStringFromSelection": false,
+  "editor.wordWrap": "on",
+  "diffEditor.ignoreTrimWhitespace": false,
+
+  "emmet.includeLanguages": {
+    "vue-html": "html",
+    "vue": "html"
+  },
+  "emmet.triggerExpansionOnTab": true,
+
+  "workbench.startupEditor": "none",
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  "workbench.colorTheme": "Monokai",
+
+  "window.restoreWindows": "none",
+
+  "terminal.integrated.fontSize": 13,
+  "terminal.integrated.fontWeightBold": "normal",
+  "terminal.integrated.shell.windows": "C:\\Windows\\Sysnative\\bash.exe",
+  "terminal.integrated.shellArgs.windows": ["-i"],
+  "terminal.integrated.shellArgs.osx": ["-l"],
+
+  "gitlens.codeLens.enabled": false,
+
+  "newFile.showPathRelativeTo": "project",
+  "newFile.relativeTo": "project",
+
+  "gitProjectManager.baseProjectsFolders": [
+    "~/Projects"
+  ],
+  "gitProjectManager.storeRepositoriesBetweenSessions": true,
+  "gitProjectManager.ignoredFolders": [
+    "node_modules"
+  ],
+
+  "vim.overrideCopy": false,
+  "vim.useSystemClipboard": true,
+  "vim.leader": "<space>",
+  "vim.easymotion": true,
+  "vim.surround": true,
+  "vim.sneak": true,
+  "window.zoomLevel": 1,
+  "breadcrumbs.enabled": true,
+  "workbench.fontAliasing": "auto",
+  "editor.renderWhitespace": "none",
+  "editor.renderControlCharacters": true,
+  "editor.fontSize": 14,
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  "workbench.activityBar.visible": true,
+  "workbench.sideBar.location": "left",
+  "git.autofetch": true,
+  "files.autoSave": "off",
+  "workbench.statusBar.visible": true
+}
