@@ -1,0 +1,40 @@
+# gitleaks 配置。用于 pre-commit 守卫与 CI 扫描。
+#
+# 这个仓库是公开的，所以默认规则全开，只对确定的误报做窄豁免。
+
+[extend]
+# 继承 gitleaks 内置的全部规则（各家云厂商的 key 格式、私钥、token 等）
+useDefault = true
+
+[allowlist]
+description = "本仓库的已知误报"
+
+paths = [
+  # 归档内容：历史原样保留，按新规范改反而破坏「归档即原样」的前提。
+  # 归档里若真有密钥需要单独处理，不能靠豁免掩盖 —— 见下面的说明。
+  '''(^|/)legacy/''',
+
+  # 测试用的替身凭据。它们是故意造出来喂给扫描器的假值，
+  # 用于验证守卫本身有效（例如 secrets_test.sh 里那个假私钥）。
+  #
+  # 模式两端都不锚定绝对位置：gitleaks 在从仓库外调用时报的是绝对路径
+  # （/Users/.../test/foo_test.sh），只写 ^test/ 会匹配不上。
+  '''(^|/)test/[^/]*_test\.sh$''',
+]
+
+regexes = [
+  # 环境变量的**名字**不是凭据。council skill 与 secrets 文档里
+  # 大量出现 NVIDIA_API_KEY / OPENAI_API_KEY 这类名字，
+  # 它们恰恰是「只存名字不存值」这一设计的体现。
+  '''(ANTHROPIC|OPENAI|GEMINI|GOOGLE|NVIDIA|CURSOR)_API_KEY''',
+  '''api_key_env''',
+
+  # 占位符与示例值
+  '''\{\{[A-Z_]+\}\}''',
+  '''you@example\.com''',
+  '''<NAME>''',
+  '''your-.*-here''',
+]
+
+# 说明：这里没有为 config/ 或任何真实配置目录开豁免 ——
+# 那些地方一旦出现凭据形状的字符串，就应该阻止提交并人工确认。
