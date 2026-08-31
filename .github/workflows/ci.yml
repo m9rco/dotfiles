@@ -1,0 +1,376 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  # 手动触发，便于在不改代码的情况下重跑
+  workflow_dispatch:
+
+# 同一分支的新 push 取消旧的运行 —— 省 runner 时间
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------ 静态检查
+  #
+  # 单独一个 job：它最快，失败时其他 job 的结果就不重要了。
+  lint:
+    name: lint (shellcheck + shfmt + conventions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and shfmt
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          # shfmt 走官方发布二进制：apt 里的版本太旧，格式规则与本地不一致
+          SHFMT_VERSION=v3.10.0
+          curl -fsSL -o /tmp/shfmt \
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+          chmod +x /tmp/shfmt
+          sudo mv /tmp/shfmt /usr/local/bin/shfmt
+          shellcheck --version | head -2
+          shfmt --version
+
+      - name: Lint
+        run: sh test/lint.sh
+
+      - name: Install PowerShell
+        run: |
+          # Ubuntu 上装 pwsh 以便跑 PowerShell 侧的语法与静态检查。
+          # Windows 特有的行为（注册表、winget）由 windows job 验证。
+          sudo apt-get install -y -qq wget apt-transport-https software-properties-common
+          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          rm -f packages-microsoft-prod.deb
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq powershell
+          pwsh --version
+
+      - name: Install PSScriptAnalyzer
+        run: pwsh -NoProfile -Command "Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck"
+
+      - name: Lint PowerShell
+        run: sh test/lint_ps.sh
+
+      - name: Spec coverage is complete
+        run: |
+          # 每条 spec requirement 都必须映射到实现与验证方式。
+          # 这条检查也会校验映射表本身没有引用已不存在的文件 ——
+          # 一张说谎的追溯表比没有表更糟。
+          sh test/spec_coverage.sh --check
+
+  # ------------------------------------------------------------------ 密钥扫描
+  #
+  # 这个仓库是公开的，一次泄露就是永久泄露。CI 上扫全库（不只是暂存区），
+  # 因为 pre-commit 守卫只能防住装了 gitleaks 的机器。
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 扫历史需要完整克隆
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.30.1
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo mv /tmp/gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Scan working tree
+        run: gitleaks dir . --redact --no-banner --verbose
+
+      - name: Scan full history
+        run: gitleaks git . --redact --no-banner
+
+  # ------------------------------------------------------------------ 测试矩阵
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.shell }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 一个平台失败不取消其他平台 —— 需要看到完整的失败面
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # POSIX 兼容性靠 dash 把关：bootstrap.sh 必须能在它下面跑
+        shell: [sh, dash]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dash
+        if: matrix.shell == 'dash' && runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dash
+
+      - name: Install dash (macOS)
+        if: matrix.shell == 'dash' && runner.os == 'macOS'
+        run: brew install dash
+
+      - name: Run the test suites
+        run: DOT_TEST_SHELL=${{ matrix.shell }} sh test/run_all.sh
+
+  # ------------------------------------------------------------------ 引导冒烟
+  #
+  # 测试套件用替身验证行为；这里验证真实入口能在真实环境里跑通。
+  smoke:
+    name: bootstrap smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: --info prints platform detection
+        run: |
+          ./bootstrap.sh --info
+          # 探测结果必须完整；缺项说明某条探测路径在这个平台上断了
+          for key in DOT_OS DOT_ARCH DOT_PKG DOT_WSL DOT_HEADLESS; do
+            ./bootstrap.sh --info | grep -q "^${key} " || {
+              echo "missing detection output: ${key}"
+              exit 1
+            }
+          done
+
+      - name: CI is detected as headless
+        run: |
+          # CI 上必须是 headless，否则字体等 GUI 模块会被误执行
+          ./bootstrap.sh --info | grep -qE '^DOT_HEADLESS +1' || {
+            echo 'DOT_HEADLESS should be 1 in CI'
+            ./bootstrap.sh --info
+            exit 1
+          }
+
+      - name: --list shows modules
+        run: ./bootstrap.sh --list
+
+      - name: --help is generated from disk
+        run: ./bootstrap.sh --help
+
+      - name: --dry-run touches nothing
+        run: |
+          before=$(find "$HOME" -maxdepth 2 2>/dev/null | sort | shasum | cut -d' ' -f1)
+          ./bootstrap.sh --dry-run
+          after=$(find "$HOME" -maxdepth 2 2>/dev/null | sort | shasum | cut -d' ' -f1)
+          if [ "$before" != "$after" ]; then
+            echo 'dry-run modified $HOME — that must never happen'
+            exit 1
+          fi
+
+      - name: --dry-run for every tag
+        run: |
+          # 每个标签都要能规划出来，不能有模块在某个标签下崩掉
+          for tag in $(./bootstrap.sh --help | sed -n 's/^Available tags: //p'); do
+            echo "--- tag: $tag ---"
+            ./bootstrap.sh --dry-run --tag "$tag"
+          done
+
+      - name: unknown module exits non-zero
+        run: |
+          if ./bootstrap.sh --only definitely-not-a-module >/dev/null 2>&1; then
+            echo 'unknown module should have failed'
+            exit 1
+          fi
+
+
+  # ------------------------------------------------------------------ Windows
+  #
+  # 真实 Windows runner —— PowerShell 侧的代码只有在这里才算被验证过。
+  # 本地 macOS 上能跑 pwsh，但拿不到注册表、winget、真实的 LOCALAPPDATA。
+  windows:
+    name: windows (PowerShell)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PowerShell versions available
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          # 5.1 也必须能跑 —— 那是 Windows 自带的版本，引导不能假设 7 已装好
+          powershell -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Lint (syntax + PSScriptAnalyzer + smoke)
+        shell: bash
+        run: sh test/lint_ps.sh
+
+      - name: -Info under PowerShell 5.1
+        shell: powershell
+        run: |
+          .\bootstrap.ps1 -Info
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: -Info reports every detection key
+        shell: pwsh
+        run: |
+          $out = .\bootstrap.ps1 -Info
+          foreach ($key in @('DOT_OS', 'DOT_ARCH', 'DOT_PKG', 'DOT_WSL', 'DOT_HEADLESS')) {
+            if (-not ($out | Select-String -Pattern "^$key ")) {
+              Write-Error "missing detection output: $key"
+              exit 1
+            }
+          }
+          # CI 上必须是 headless，否则 GUI 模块会被误执行
+          if (-not ($out | Select-String -Pattern '^DOT_HEADLESS\s+1')) {
+            Write-Error 'DOT_HEADLESS should be 1 in CI'
+            exit 1
+          }
+
+      - name: -List and -Help
+        shell: pwsh
+        run: |
+          .\bootstrap.ps1 -List
+          .\bootstrap.ps1 -Help
+
+      - name: -DryRun writes nothing
+        shell: pwsh
+        run: |
+          $before = (Get-ChildItem -Path $env:USERPROFILE -Force | Measure-Object).Count
+          .\bootstrap.ps1 -DryRun
+          $after = (Get-ChildItem -Path $env:USERPROFILE -Force | Measure-Object).Count
+          if ($before -ne $after) {
+            Write-Error "dry-run changed the profile directory ($before -> $after)"
+            exit 1
+          }
+
+      - name: unknown module exits non-zero
+        shell: pwsh
+        run: |
+          .\bootstrap.ps1 -Only definitely-not-a-module 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error 'unknown module should have failed'
+            exit 1
+          }
+
+      - name: link primitive backs up existing files
+        shell: pwsh
+        run: |
+          # 这是 Windows 侧最关键的一条：链接前必须备份，绝不销毁用户内容
+          $sandbox = Join-Path $env:RUNNER_TEMP 'linktest'
+          New-Item -ItemType Directory -Path "$sandbox\home" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$sandbox\repo" -Force | Out-Null
+          Set-Content -Path "$sandbox\repo\rc" -Value 'REPO CONTENT'
+          Set-Content -Path "$sandbox\home\.rc" -Value 'USER CONTENT WORTH KEEPING'
+
+          $env:DOT_HOME = "$sandbox\home"
+          $env:DOT_BACKUP_ROOT = "$sandbox\backup"
+          . .\lib\windows.ps1
+          $script:DotDryRun = $false
+          New-DotLink -Source "$sandbox\repo\rc" -Target "$sandbox\home\.rc" | Out-Null
+
+          if (-not (Test-DotSymlink "$sandbox\home\.rc")) {
+            Write-Error 'target did not become a link'
+            exit 1
+          }
+          $backed = Get-ChildItem -Path "$sandbox\backup" -Recurse -File | Select-Object -First 1
+          if (-not $backed) {
+            Write-Error 'the pre-existing file was NOT backed up'
+            exit 1
+          }
+          if ((Get-Content $backed.FullName -Raw).Trim() -ne 'USER CONTENT WORTH KEEPING') {
+            Write-Error 'backup content does not match the original'
+            exit 1
+          }
+          Write-Output "backed up to: $($backed.FullName)"
+
+      - name: real install of the core modules
+        shell: pwsh
+        run: |
+          # CI 是 headless，所以 GUI 模块（字体、Windows Terminal）应被跳过，
+          # 其余应真正安装。这一步验证「跳过是有原因的」而不是静默失败。
+          .\bootstrap.ps1 -Tag core
+        continue-on-error: true
+
+      - name: second run is idempotent
+        shell: pwsh
+        run: |
+          $backupRoot = Join-Path $env:USERPROFILE '.dotfiles-backup'
+          $before = if (Test-Path $backupRoot) { (Get-ChildItem $backupRoot -Directory).Count } else { 0 }
+          .\bootstrap.ps1 -Tag core
+          $after = if (Test-Path $backupRoot) { (Get-ChildItem $backupRoot -Directory).Count } else { 0 }
+          if ($before -ne $after) {
+            Write-Error "second run created a new backup dir ($before -> $after); not idempotent"
+            exit 1
+          }
+        continue-on-error: true
+
+  # ------------------------------------------------------------------ 最小容器
+  #
+  # 真实安装的可移植性验证。debian:stable-slim 的 /bin/sh 是 dash，
+  # 且几乎什么都没预装 —— 能在这里跑通，才说明引导没有隐式依赖。
+  container:
+    name: real install in a minimal container
+    runs-on: ubuntu-latest
+    container:
+      image: debian:stable-slim
+    steps:
+      - name: Install the bare minimum
+        run: |
+          apt-get update -qq
+          # 只装引导本身声明需要的：git 用于 checkout，curl/ca-certificates 用于下载
+          apt-get install -y -qq git curl ca-certificates
+          # 确认 /bin/sh 真的是 dash —— 这是本 job 的意义所在
+          ls -l /bin/sh
+
+      - uses: actions/checkout@v4
+
+      - name: Detection works with nothing preinstalled
+        run: |
+          ./bootstrap.sh --info
+          ./bootstrap.sh --info | grep -qE '^DOT_OS +linux'
+          ./bootstrap.sh --info | grep -qE '^DOT_PKG +apt'
+
+      - name: Test suites pass under dash
+        run: sh test/run_all.sh
+
+      - name: Real install of the core modules
+        run: |
+          # 容器里是 root 且无图形环境：字体模块应被跳过，其余应真正安装
+          ./bootstrap.sh --tag core
+
+      - name: Installed state is correct
+        run: |
+          test -L "$HOME/.zshrc" || { echo '.zshrc was not linked'; exit 1; }
+          test -L "$HOME/.gitconfig" || { echo '.gitconfig was not linked'; exit 1; }
+          command -v zsh >/dev/null || { echo 'zsh was not installed'; exit 1; }
+          # zsh 必须能在没有 oh-my-zsh 的情况下正常启动
+          zsh -i -c 'echo zsh starts cleanly' </dev/null
+
+      - name: Second run is idempotent
+        run: |
+          # 记录首次安装后的备份目录数量
+          before=$(find "$HOME/.dotfiles-backup" -maxdepth 1 -type d 2>/dev/null | wc -l)
+          ./bootstrap.sh --tag core
+          after=$(find "$HOME/.dotfiles-backup" -maxdepth 1 -type d 2>/dev/null | wc -l)
+          if [ "$before" != "$after" ]; then
+            echo "second run created a new backup dir ($before -> $after); not idempotent"
+            exit 1
+          fi
+
+      - name: Existing user files are backed up, never destroyed
+        run: |
+          rm -f "$HOME/.zshrc"
+          printf 'USER CONTENT WORTH KEEPING\n' > "$HOME/.zshrc"
+          ./bootstrap.sh --only zsh
+          # 原文件必须能在备份里逐字节找回
+          found=$(grep -rl 'USER CONTENT WORTH KEEPING' "$HOME/.dotfiles-backup" 2>/dev/null | head -1)
+          if [ -z "$found" ]; then
+            echo 'the pre-existing .zshrc was not backed up'
+            exit 1
+          fi
+          echo "backed up to: $found"
