@@ -1,0 +1,112 @@
+# 全局 gitignore —— 只放「任何项目里都不该提交」的东西。
+#
+# 项目特有的忽略规则属于项目自己的 .gitignore，不要放这里：
+# 别人 clone 你的项目时拿不到你的全局配置，规则会失效。
+
+# ---------------------------------------------------------------- 操作系统
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+*~
+
+# ---------------------------------------------------------------- 编辑器与 IDE
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+Session.vim
+Sessionx.vim
+.netrwhist
+tags
+
+# Emacs
+*~
+\#*\#
+.\#*
+.projectile
+
+# JetBrains —— .idea 里既有个人设置也有可共享的项目配置，
+# 需要共享的项目应在自己的 .gitignore 里精确控制
+.idea/
+*.iml
+*.iws
+
+# Visual Studio Code —— 同理，需要共享 settings.json 的项目自行处理
+.vscode/*
+!.vscode/extensions.json
+
+# Sublime Text
+*.sublime-workspace
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+
+# ---------------------------------------------------------------- 工具产物
+
+# direnv：.envrc 应该入库，但它加载的本地变量不该
+.direnv/
+
+# 语言/工具的本地缓存
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+node_modules/
+.eslintcache
+
+# ---------------------------------------------------------------- 密钥与本地配置
+#
+# 兜底防线。真正的防护是 gitleaks pre-commit 守卫（见 secrets 模块）——
+# gitignore 只能防止「误 add」，防不住已经跟踪的文件被写入密钥。
+
+.env
+.env.*
+!.env.example
+!.env.template
+*.local
+*.pem
+*.key
+!*.pub
+id_rsa
+id_ed25519
+.netrc
+credentials.json
+secrets.yaml
+secrets.yml
+
+# ---------------------------------------------------------------- 杂项
+
+*.log
+*.pid
+*.swp
+*.bak
+*.orig
+*.rej
+.cache/
+tmp/

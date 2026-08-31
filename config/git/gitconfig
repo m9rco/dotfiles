@@ -1,0 +1,117 @@
+# git 配置。
+#
+# 身份（user.name / user.email）不在这里 —— 那是每台机器/每个身份不同的，
+# 由安装模块交互式写入 ~/.gitconfig.local，本文件在末尾 include 它。
+# 这样公开仓库里不出现邮箱，换工作机也不用改仓库。
+
+[include]
+	# 本机专属：身份、公司代理、单机别名。不入库。
+	path = ~/.gitconfig.local
+
+[core]
+	# delta 存在时由 30-tools 那侧的检测决定；这里给的是 delta 不存在时
+	# 也能工作的值 —— less 带 -R 才能正确显示颜色转义
+	pager = delta --diff-so-fancy 2>/dev/null || less -R
+	excludesfile = ~/.gitignore_global
+	# 大仓库上 fsmonitor 能显著加快 git status
+	fsmonitor = true
+	untrackedCache = true
+
+[init]
+	defaultBranch = main
+
+[pull]
+	# 默认 rebase，避免历史里堆满无意义的 merge commit
+	rebase = true
+
+[push]
+	# push 时自动建立上游分支，省掉 --set-upstream
+	autoSetupRemote = true
+	# 只推当前分支
+	default = current
+	followTags = true
+
+[fetch]
+	# 远端删掉的分支本地也清掉
+	prune = true
+	pruneTags = true
+
+[rebase]
+	autoStash = true
+	# 变基时自动处理 fixup!/squash! 提交
+	autosquash = true
+
+[merge]
+	# 冲突标记里保留共同祖先版本，比默认的两方对比更容易判断
+	conflictStyle = zdiff3
+
+[diff]
+	# 移动的代码块用不同颜色标出，review 时区分「移动」与「改写」
+	colorMoved = default
+	algorithm = histogram
+	# 更易读的前缀：i/ 是 index，w/ 是 worktree
+	mnemonicPrefix = true
+	renames = true
+
+[rerere]
+	# 记住冲突的解决方式，同样的冲突第二次自动应用
+	enabled = true
+	autoupdate = true
+
+[column]
+	ui = auto
+
+[branch]
+	sort = -committerdate
+
+[tag]
+	sort = version:refname
+
+[help]
+	# 命令打错时提示而不是直接执行猜测的命令
+	autocorrect = prompt
+
+[log]
+	date = iso
+
+[status]
+	showUntrackedFiles = all
+	submoduleSummary = true
+
+# ---------------------------------------------------------------- delta
+#
+# delta 不存在时这些配置是惰性的 —— git 只在实际用到 pager 时才读，
+# 而 core.pager 已经有回退。因此这里不需要条件判断。
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	line-numbers = true
+	hyperlinks = true
+	# 语法高亮主题跟随 bat 的设置
+	syntax-theme = ansi
+
+[delta "interactive"]
+	keep-plus-minus-markers = false
+
+# ---------------------------------------------------------------- 别名
+#
+# 只放几个高频且不与 oh-my-zsh git 插件冲突的。
+
+[alias]
+	# 一行图形化日志
+	lg = log --graph --pretty=format:'%C(auto)%h%d %s %C(dim)(%cr) <%an>%C(reset)' --all
+	# 当前分支的提交（相对默认分支）
+	unpushed = log --oneline @{upstream}..HEAD
+	# 撤销上一次提交但保留改动
+	undo = reset --soft HEAD~1
+	# 把当前改动暂存进一个 WIP 提交，便于切分支
+	wip = !git add -A && git commit -m 'WIP' --no-verify
+	# 谁改了这些行（忽略纯格式变更）
+	who = blame -w -C -C -C
+	# 列出分支，按最近提交排序
+	br = branch --sort=-committerdate --format='%(HEAD) %(color:yellow)%(refname:short)%(color:reset) %(color:dim)%(committerdate:relative)%(color:reset)'
+	# 交互式暂存
+	ap = add --patch

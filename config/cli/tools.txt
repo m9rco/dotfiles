@@ -1,0 +1,46 @@
+# 现代 CLI 工具清单。每行一个工具：
+#
+#   <逻辑名>|<平台>|<标签>|<回退安装方式>|<一句话说明>
+#
+# 逻辑名 -> 各平台包名的映射在 platform/*.sh 里，这里只出现逻辑名。
+# 新增工具只需加一行，安装逻辑不用改。
+#
+# 平台：macos / linux / windows，空格分隔；all 表示三平台都装。
+# 标签：default = 默认安装；optional = 需显式选择。
+# 回退方式：包管理器里没有时依次尝试，形如 cargo:crate / npm:pkg / script:URL。
+#           留空表示只走包管理器，装不上就报失败。
+
+# ---------------------------------------------------------------- 搜索与浏览
+
+ripgrep|all|default|cargo:ripgrep|grep 的替代：默认尊重 .gitignore，快一个量级
+fd|all|default|cargo:fd-find|find 的替代：语法直观，默认跳过隐藏文件与 .gitignore
+bat|all|default|cargo:bat|cat 的替代：语法高亮 + git diff 标记，也用作 man 的 pager
+eza|all|default|cargo:eza|ls 的替代：图标、git 状态、树视图（需要 Nerd Font）
+fzf|all|default||模糊查找器：Ctrl-R 历史、Ctrl-T 文件、Alt-C 目录
+
+# ---------------------------------------------------------------- 导航
+
+zoxide|all|default|cargo:zoxide|按使用频率跳目录，取代手写 cd 路径
+
+# ---------------------------------------------------------------- git
+
+delta|all|default|cargo:git-delta|git diff 的分屏高亮渲染，见 config/git/gitconfig
+lazygit|all|default||git 的终端 UI：暂存、变基、冲突解决都比命令行快
+gh|all|default||GitHub CLI：PR、issue、release，也用于 gh auth 给 git 提供凭据
+
+# ---------------------------------------------------------------- 数据处理
+
+jq|all|default||JSON 处理的事实标准
+yq|all|default||jq 之于 JSON，yq 之于 YAML/TOML/XML
+
+# ---------------------------------------------------------------- prompt
+
+starship|all|default|cargo:starship|跨 shell 的 prompt，zsh 与 PowerShell 共用 config/starship.toml
+
+# ---------------------------------------------------------------- 可选
+#
+# atuin 会接管 Ctrl-R 并把历史存进自己的 SQLite 库 —— 这是对 shell 历史
+# 行为的实质改变（好处是跨机器同步与更强的检索），因此不默认安装。
+# 用 ./bootstrap.sh --only modern-cli-optional 或显式设 DOT_WANT_ATUIN=1 启用。
+
+atuin|all|optional|cargo:atuin|shell 历史的加强版：SQLite 存储、跨机同步、模糊检索
