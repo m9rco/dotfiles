@@ -144,24 +144,31 @@ fi
 
 # 只扫暂存内容 —— 扫整个历史会让每次提交都很慢。
 #
-# 用 `gitleaks git --staged`。注意不要用旧文档里的 `gitleaks protect --staged`：
-# gitleaks 8.28 起把 protect/detect 换成了 git/dir/stdin，而 protect 仍会
-# 被接受并「成功」返回 —— 实测扫描 0 commits、放过真实私钥，
-# 守卫看起来在跑其实完全无效。
+# gitleaks 的命令在 8.28 前后不同，两代都要支持：
+#   8.28+  gitleaks git --staged      （旧的 protect 仍被接受但是空操作！）
+#   8.28-  gitleaks protect --staged
+#
+# 「protect 仍被接受但什么都不扫」这一点是实测发现的：它报告
+# "0 commits scanned"、放过真实私钥、commit 照常创建 ——
+# 守卫看起来在跑其实完全无效。所以必须按版本选命令，
+# 不能图省事只写一个。
+if gitleaks git --help >/dev/null 2>&1; then
+    _gl_cmd='git'
+else
+    _gl_cmd='protect'
+fi
 
 # 有仓库自己的 .gitleaks.toml 就显式用它（gitleaks 只在 cwd 找配置，
 # 而 hook 的 cwd 在 worktree / 子目录提交时可能不是仓库根）。
-# 没有配置也要能跑 —— 传一个不存在的路径会让 gitleaks 直接报错退出，
-# 那等于守卫失效。
+# 没有配置也要能跑 —— 传一个不存在的路径会让 gitleaks 直接报错退出。
 _gl_root=$(git rev-parse --show-toplevel 2>/dev/null)
 _gl_cfg="$_gl_root/.gitleaks.toml"
 
+_gl_ok=0
 if [ -f "$_gl_cfg" ]; then
-    _gl_ok=0
-    gitleaks git --staged --config "$_gl_cfg" --redact --no-banner || _gl_ok=1
+    gitleaks "$_gl_cmd" --staged --config "$_gl_cfg" --redact --no-banner || _gl_ok=1
 else
-    _gl_ok=0
-    gitleaks git --staged --redact --no-banner || _gl_ok=1
+    gitleaks "$_gl_cmd" --staged --redact --no-banner || _gl_ok=1
 fi
 
 if [ "$_gl_ok" = 0 ]; then

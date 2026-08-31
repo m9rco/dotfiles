@@ -308,7 +308,14 @@ if command -v gitleaks >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
     # 包括 CI checkout 后产生的临时文件与本机的未跟踪目录 ——
     # 那些不是「仓库内容」，把它们算进来会让这条断言随环境波动。
     _gl_report="$FIX/gitleaks-report.json"
-    if gitleaks git "$DOT_REPO" --config "$DOT_REPO/.gitleaks.toml" \
+    # 命令名随 gitleaks 版本变化（8.28 起 detect/protect -> dir/git）。
+    # runner 镜像上的版本可能比本机旧，两代都要能跑。
+    if gitleaks git --help >/dev/null 2>&1; then
+        set -- git "$DOT_REPO"
+    else
+        set -- detect --source "$DOT_REPO"
+    fi
+    if gitleaks "$@" --config "$DOT_REPO/.gitleaks.toml" \
         --redact --no-banner --report-format json --report-path "$_gl_report" \
         >/dev/null 2>&1; then
         _pass=$((_pass + 1))

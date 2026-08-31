@@ -116,6 +116,23 @@ jobs:
         if: matrix.shell == 'dash' && runner.os == 'macOS'
         run: brew install dash
 
+      - name: Install gitleaks
+        # 测试里有真实的 pre-commit 守卫用例，需要 gitleaks。
+        # 装固定版本而不依赖 runner 镜像自带的 —— 镜像里的版本可能旧到
+        # 用 detect/protect 而非 dir/git（实测 ubuntu runner 就是），
+        # 那会让守卫测试以难以理解的方式失败。
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install gitleaks
+          else
+            GITLEAKS_VERSION=8.30.1
+            curl -fsSL -o /tmp/gitleaks.tar.gz \
+              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+            tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+            sudo mv /tmp/gitleaks /usr/local/bin/
+          fi
+          gitleaks version
+
       - name: Run the test suites
         run: DOT_TEST_SHELL=${{ matrix.shell }} sh test/run_all.sh
 
