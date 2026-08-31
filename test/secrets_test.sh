@@ -272,15 +272,30 @@ if command -v gitleaks >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         expect 'the leaking commit was not created' '1' "$commits"
 
         # 干净提交必须仍然通过
-        rm -f "$GR/leak.pem"
-        (cd "$GR" && git reset -q) >/dev/null 2>&1
-        printf 'still clean\n' >"$GR/ok2.txt"
-        clean_ok=yes
+        # 干净提交必须仍然通过。
+        # 注意要把上一轮暂存的 leak.pem 从索引里彻底移除 —— 只 rm 文件 +
+        # git reset 在部分 git 版本下仍会留下已删除文件的暂存记录，
+        # 下一次 commit 就把「删除 leak.pem」也带上，而 gitleaks 扫的是
+        # 暂存内容，于是又命中同一个密钥。用 git rm --cached 明确处理。
         (
             cd "$GR" || exit 1
+            git rm --cached --quiet leak.pem 2>/dev/null || true
+            git reset -q
+        ) >/dev/null 2>&1
+        rm -f "$GR/leak.pem"
+        printf 'still clean\n' >"$GR/ok2.txt"
+        clean_out=$(
+            cd "$GR" || exit 1
             git add ok2.txt
-            git commit -m 'clean' >/dev/null 2>&1
-        ) || clean_ok=no
+            git commit -m 'clean' 2>&1
+        )
+        clean_ok=yes
+        printf '%s' "$clean_out" | grep -q 'commit blocked' && clean_ok=no
+        # 也可能因为别的原因失败（如身份未配置），那同样是问题
+        (cd "$GR" && git log --oneline -1 2>/dev/null | grep -q clean) || clean_ok=no
+        if [ "$clean_ok" = no ]; then
+            printf '       commit output was: %s\n' "$(printf '%s' "$clean_out" | head -3)"
+        fi
         expect 'a clean commit still succeeds' 'yes' "$clean_ok"
     else
         printf 'skip (guard hook not installed in this working copy)\n'
@@ -289,13 +304,29 @@ if command -v gitleaks >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
     printf '\n== this repository itself is clean ==\n'
     # 必须显式传 --config：gitleaks 只在**当前工作目录**下找 .gitleaks.toml，
     # 从别处扫描时配置不生效，本文件里那个故意造的假私钥就会被判为泄露。
-    if gitleaks dir "$DOT_REPO" --config "$DOT_REPO/.gitleaks.toml" \
-        --redact --no-banner >/dev/null 2>&1; then
+    # 只扫被 git 跟踪的内容。`gitleaks dir` 会扫工作区里的一切，
+    # 包括 CI checkout 后产生的临时文件与本机的未跟踪目录 ——
+    # 那些不是「仓库内容」，把它们算进来会让这条断言随环境波动。
+    _gl_report="$FIX/gitleaks-report.json"
+    if gitleaks git "$DOT_REPO" --config "$DOT_REPO/.gitleaks.toml" \
+        --redact --no-banner --report-format json --report-path "$_gl_report" \
+        >/dev/null 2>&1; then
         _pass=$((_pass + 1))
-        printf 'ok   no credentials found in the repository\n'
+        printf 'ok   no credentials found in the repository history\n'
     else
         _fail=$((_fail + 1))
         printf 'FAIL gitleaks found credentials in this repository\n'
+        # 报出位置便于诊断（--redact 保证不打印值本身）
+        if [ -f "$_gl_report" ] && command -v python3 >/dev/null 2>&1; then
+            python3 -c "
+import json, sys
+try:
+    for f in json.load(open('$_gl_report'))[:5]:
+        print('       %s:%s  rule=%s' % (f.get('File'), f.get('StartLine'), f.get('RuleID')))
+except Exception:
+    pass
+"
+        fi
     fi
 else
     printf 'skip (gitleaks or git not available)\n'
