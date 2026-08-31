@@ -1,0 +1,25 @@
+# 字体清单。每行一个字体：
+#
+#   <名称>|<下载 URL>|<判定已安装的文件名前缀>|<可选：只保留匹配此模式的文件>
+#
+# 新增字体只需加一行，安装逻辑不用改。
+#
+# 关于 URL：一律用 GitHub 的 /releases/latest/download/ 形式，不走 API。
+# API 对未认证请求限 60 次/小时，装字体时撞上限会变成难以理解的失败；
+# latest/download 是稳定重定向，无限制也不需要 token。
+#
+# 关于第 4 列（变体过滤）：Nerd Fonts 的 zip 一个字体给 96 个文件、
+# 六个家族 —— NerdFont / NerdFontMono / NerdFontPropo 各自再有 NL
+# （no-ligature）版本。终端只需要一个家族，全装会让字体选择菜单里
+# 出现六个几乎同名的条目，还白占磁盘。留空表示装包里的全部字体。
+
+# 终端主字体。Nerd Font 版本带 powerline 与图标字形 ——
+# starship / eza / lazygit 的图标要靠它才能正常显示。
+#
+# 只装 NerdFontMono：等宽、带连字。终端要严格等宽，Propo（比例间距）
+# 会让列对不齐；NL 版去掉了连字，而 JetBrains Mono 的连字正是它的特点。
+JetBrainsMono Nerd Font|https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip|JetBrainsMonoNerdFontMono|JetBrainsMonoNerdFontMono-
+
+# 中英混排等宽。中文与英文的宽度严格 2:1，写中文注释的代码不会错位。
+# NF 版同样自带图标字形。这个包本身只有 16 个文件，无需过滤。
+Maple Mono NF|https://github.com/subframe7536/maple-font/releases/latest/download/MapleMono-NF-unhinted.zip|MapleMono-NF|
