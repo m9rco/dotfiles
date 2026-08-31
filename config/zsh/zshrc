@@ -1,0 +1,41 @@
+# zsh 入口。保持极薄 —— 真正的配置在 zshrc.d/ 的片段里。
+#
+# 加载顺序按文件名字典序，数字前缀决定分层：
+#   00-env        语言环境、EDITOR、镜像
+#   10-path       PATH 与 brew 环境
+#   15-history    历史记录
+#   20-omz        oh-my-zsh 与插件
+#   25-completion 补全与缓存
+#   30-tools      现代 CLI 工具的 shell hook
+#   35-lazy       高开销工具的惰性加载
+#   40-aliases    别名
+#   90-local      本机专属覆盖（最后生效）
+#
+# 新增配置关注点请新建片段文件，不要往这个文件里堆。
+
+# 仓库位置。dot_link 把本文件链接到 ~/.zshrc，所以要顺着链接找回仓库。
+if [[ -z "$DOTFILES" ]]; then
+  export DOTFILES="${${(%):-%x}:A:h:h:h}"
+fi
+
+typeset -g DOT_ZSHRC_D="${DOTFILES}/config/zsh/zshrc.d"
+
+# 逐个 source 片段。
+#
+# 只有 source 本身失败（文件语法错误、读不到）才算失败并告警；片段内
+# 最后一条命令返回非零不算 —— 以条件判断结尾的片段（如 90-local 的
+# `[[ -f ... ]] && source`）会让整段的退出状态为假，那不是错误。
+# 这个区分靠 source 的返回值只在解析/读取失败时才是特殊值来实现，
+# 因此这里显式在 source 后加 `|| true` 的语义，只捕获真正的加载异常。
+if [[ -d "$DOT_ZSHRC_D" ]]; then
+  for _dot_fragment in "$DOT_ZSHRC_D"/*.zsh(N); do
+    if [[ ! -r "$_dot_fragment" ]]; then
+      print -u2 "dotfiles: fragment not readable, skipping: ${_dot_fragment:t}"
+      continue
+    fi
+    # 语法错误会让 source 返回非零且不执行内容；片段内的失败命令不影响
+    # 后续片段，因为每个片段独立 source。
+    source "$_dot_fragment" || true
+  done
+  unset _dot_fragment
+fi

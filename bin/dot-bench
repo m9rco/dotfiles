@@ -1,0 +1,117 @@
+#!/usr/bin/env sh
+#
+# 测量交互式 shell 的启动耗时。
+#
+# 预算是 200ms（见 openspec 的 shell-environment spec）。超了就砍插件
+# 或把重活改成惰性加载，不要放宽预算 —— 每个新 shell、每个新终端标签
+# 都要付这个成本。
+#
+#   bin/dot-bench           # 默认跑 10 次取统计
+#   bin/dot-bench 20        # 跑 20 次
+#   bin/dot-bench -v        # 顺便列出各片段的耗时
+#
+# shellcheck shell=sh
+
+set -u
+
+DOT_RUNS=10
+DOT_VERBOSE=0
+
+for _arg in "$@"; do
+    case $_arg in
+        -v | --verbose) DOT_VERBOSE=1 ;;
+        [0-9]*) DOT_RUNS=$_arg ;;
+        -h | --help)
+            printf 'Usage: dot-bench [runs] [-v]\n\nMeasures interactive zsh startup time (budget: 200ms).\n'
+            exit 0
+            ;;
+        *)
+            printf 'unknown argument: %s\n' "$_arg" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if ! command -v zsh >/dev/null 2>&1; then
+    printf 'zsh not installed\n' >&2
+    exit 1
+fi
+
+# 用 python3 拿毫秒级时间戳：date +%s%N 在 macOS 的 BSD date 上不支持。
+_now_ms() {
+    python3 -c 'import time; print(int(time.time() * 1000))'
+}
+
+printf 'measuring `zsh -i -c exit`\n\n'
+
+# 先单独测一次冷启动。首次启动要建 .zcompdump（compinit 全量扫描），
+# 实测比稳态慢一个数量级。把它算进平均值会让数字失去意义 ——
+# 冷启动每台机器只发生一次，而稳态是每开一个终端都要付的成本。
+_cold_start=$(_now_ms)
+zsh -i -c exit >/dev/null 2>&1
+_cold_end=$(_now_ms)
+_cold=$((_cold_end - _cold_start))
+printf '  cold start (builds completion cache): %s ms\n\n' "$_cold"
+
+printf '  steady state over %s runs:\n' "$DOT_RUNS"
+
+_total=0
+_min=999999
+_max=0
+_i=0
+_samples=''
+
+while [ "$_i" -lt "$DOT_RUNS" ]; do
+    _start=$(_now_ms)
+    zsh -i -c exit >/dev/null 2>&1
+    _end=$(_now_ms)
+    _elapsed=$((_end - _start))
+
+    _total=$((_total + _elapsed))
+    [ "$_elapsed" -lt "$_min" ] && _min=$_elapsed
+    [ "$_elapsed" -gt "$_max" ] && _max=$_elapsed
+    _samples="$_samples $_elapsed"
+
+    _i=$((_i + 1))
+    printf '    run %2s: %s ms\n' "$_i" "$_elapsed"
+done
+
+_avg=$((_total / DOT_RUNS))
+# 中位数比平均值稳健 —— 偶发的系统抖动（Spotlight、编译任务）会拉高平均值
+_median=$(printf '%s' "$_samples" | tr ' ' '\n' | grep -v '^$' | sort -n |
+    awk '{a[NR]=$1} END {print (NR%2) ? a[(NR+1)/2] : int((a[NR/2]+a[NR/2+1])/2)}')
+
+printf '\n  median %s ms   avg %s ms   min %s ms   max %s ms\n\n' \
+    "$_median" "$_avg" "$_min" "$_max"
+
+# 以中位数对预算判定
+if [ "$_median" -le 200 ]; then
+    printf 'within the 200ms budget (median %s ms)\n' "$_median"
+else
+    printf 'OVER the 200ms budget by %s ms (median %s ms)\n' "$((_median - 200))" "$_median"
+    printf 'run with -v to see which fragments cost the most\n'
+fi
+
+# ---------------------------------------------------------------- 逐片段
+
+if [ "$DOT_VERBOSE" = 1 ]; then
+    printf '\n== per-fragment cost ==\n'
+    printf '(each measured by sourcing it alone in a fresh non-interactive zsh)\n\n'
+
+    _frag_dir="${DOTFILES:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/config/zsh/zshrc.d"
+    if [ ! -d "$_frag_dir" ]; then
+        printf 'fragment dir not found: %s\n' "$_frag_dir" >&2
+        exit 0
+    fi
+
+    for _frag in "$_frag_dir"/*.zsh; do
+        [ -f "$_frag" ] || continue
+        _fstart=$(_now_ms)
+        zsh -c ". '$_frag'" >/dev/null 2>&1
+        _fend=$(_now_ms)
+        printf '  %-22s %s ms\n' "$(basename -- "$_frag")" "$((_fend - _fstart))"
+    done
+
+    printf '\nnote: fragments are not independent (later ones rely on earlier ones),\n'
+    printf 'so these numbers indicate cost, not a strict breakdown of the total.\n'
+fi
