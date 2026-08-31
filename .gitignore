@@ -1,1 +1,40 @@
-.idea
+# 编辑器与 IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 本地覆盖文件 —— 按设计不入库。
+# 它们是每台机器专属的，且可能含凭据。
+*.local
+.env
+.env.*
+!.env.example
+
+# 但归档内容例外：legacy/ 是历史原样保留，里面的 zshrc.local 是旧配置的
+# 一部分而不是本机的本地覆盖。上面的 *.local 规则会把它排除掉，
+# 导致归档不完整 —— 这与「归档即原样」的前提冲突。
+!legacy/**
+
+# 引导过程产生的备份（正常在 $HOME 下，但万一仓库被 clone 到 $HOME 也要挡住）
+.dotfiles-backup/
+
+# 工具缓存
+.cache/
+node_modules/
+__pycache__/
+
+# AI 工具的本机状态。config/ai/ 下的定义要入库，
+# 但工具运行时产生的会话、日志、索引不要。
+.claude/projects/
+.claude/history.jsonl
+.claude/sessions/
+.claude/shell-snapshots/
+.claude/statsig/
+.claude/telemetry/
+.codebuddy/
+.codegraph/
