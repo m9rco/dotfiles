@@ -65,6 +65,27 @@ ok_if() {
     fi
 }
 
+# 读取文件权限。BSD 与 GNU 的 stat 参数不同，且不能靠「失败再试」——
+# GNU 的 -f 是显示文件系统信息，对任意文件都成功。校验输出形状才可靠。
+# （被测代码里的 _dot_secret_mode 同理，见 lib/secrets.sh 的说明。）
+file_mode() {
+    _fm=$(stat -c '%a' "$1" 2>/dev/null)
+    case $_fm in
+        [0-7][0-7][0-7] | [0-7][0-7][0-7][0-7])
+            printf '%s' "$_fm"
+            return 0
+            ;;
+    esac
+    _fm=$(stat -f '%Lp' "$1" 2>/dev/null)
+    case $_fm in
+        [0-7][0-7][0-7] | [0-7][0-7][0-7][0-7])
+            printf '%s' "$_fm"
+            return 0
+            ;;
+    esac
+    printf 'unknown'
+}
+
 # 在沙箱里调用 lib/secrets.sh 的函数。
 # DOT_OS 设成一个没有密钥库实现的值，好让测试只走「环境变量 / 本地文件」
 # 这两条可控路径 —— 真实 keychain 不该被测试写入。
@@ -184,19 +205,16 @@ mkdir -p "$MB"
 out=$(env -i HOME="$MB" PATH="$PATH" DOT_ENV_LOCAL="$MB/.config/dotfiles/env.local" \
     sh "$BOOT" --only secrets 2>&1)
 ok_if 'env file was created' '[ -f "$MB/.config/dotfiles/env.local" ]'
-mode=$(stat -f '%Lp' "$MB/.config/dotfiles/env.local" 2>/dev/null ||
-    stat -c '%a' "$MB/.config/dotfiles/env.local" 2>/dev/null)
+mode=$(file_mode "$MB/.config/dotfiles/env.local")
 expect 'mode is 600' '600' "$mode"
-dirmode=$(stat -f '%Lp' "$MB/.config/dotfiles" 2>/dev/null ||
-    stat -c '%a' "$MB/.config/dotfiles" 2>/dev/null)
+dirmode=$(file_mode "$MB/.config/dotfiles")
 expect 'parent dir is 700' '700' "$dirmode"
 
 printf '\n== module tightens an over-permissive existing file ==\n'
 chmod 644 "$MB/.config/dotfiles/env.local"
 out=$(env -i HOME="$MB" PATH="$PATH" DOT_ENV_LOCAL="$MB/.config/dotfiles/env.local" \
     sh "$BOOT" --only secrets 2>&1)
-mode=$(stat -f '%Lp' "$MB/.config/dotfiles/env.local" 2>/dev/null ||
-    stat -c '%a' "$MB/.config/dotfiles/env.local" 2>/dev/null)
+mode=$(file_mode "$MB/.config/dotfiles/env.local")
 expect 'permissions were tightened to 600' '600' "$mode"
 expect_has 'the change is reported' 'tightened' "$out"
 

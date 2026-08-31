@@ -117,14 +117,27 @@ function Get-DotModules {
         }
 
         # 在子作用域里点源加载并把结果作为对象返回 ——
-        # 比往父作用域 Set-Variable 更可靠，也不会污染 runner 自身的命名空间
+        # 比往父作用域 Set-Variable 更可靠，也不会污染 runner 自身的命名空间。
+        #
+        # 注意：不要把 if/else 表达式内联写进 [pscustomobject]@{} 的字面量里。
+        # PowerShell 7.5 接受那种写法，7.6 的解析器拒绝（报 MissingEndCurlyBrace，
+        # 且错误位置指向整个函数而非真正出问题的那一行）。拆成普通语句最稳。
         $probe = $null
         try {
             $probe = & {
                 . $file
+
+                $metaValue = $null
+                if (Get-Variable -Name 'DotModule' -Scope Local -ErrorAction SilentlyContinue) {
+                    $metaValue = $DotModule
+                }
+
+                $hasInstall = [bool](Get-Command -Name 'Install-DotModule' `
+                        -CommandType Function -ErrorAction SilentlyContinue)
+
                 [pscustomobject]@{
-                    Meta      = if (Get-Variable -Name 'DotModule' -Scope Local -ErrorAction SilentlyContinue) { $DotModule } else { $null }
-                    HasInstall = [bool](Get-Command -Name 'Install-DotModule' -CommandType Function -ErrorAction SilentlyContinue)
+                    Meta       = $metaValue
+                    HasInstall = $hasInstall
                 }
             }
         }
@@ -157,14 +170,20 @@ function Get-DotModules {
             continue
         }
 
+        # 同上：if/else 不内联进 hashtable 字面量
+        $requires = @()
+        if ($meta.ContainsKey('Requires')) { $requires = @($meta['Requires']) }
+        $needsGui = $false
+        if ($meta.ContainsKey('NeedsGui')) { $needsGui = [bool]$meta['NeedsGui'] }
+
         $modules[$name] = @{
             Name        = $name
             File        = $file
             Description = $meta['Description']
             Platforms   = @($meta['Platforms'])
             Tags        = @($meta['Tags'])
-            Requires    = if ($meta.ContainsKey('Requires')) { @($meta['Requires']) } else { @() }
-            NeedsGui    = if ($meta.ContainsKey('NeedsGui')) { [bool]$meta['NeedsGui'] } else { $false }
+            Requires    = $requires
+            NeedsGui    = $needsGui
         }
     }
 

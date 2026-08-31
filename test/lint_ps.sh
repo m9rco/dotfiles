@@ -58,6 +58,48 @@ for f in bootstrap.ps1 lib/windows.ps1 platform/windows.ps1 \
     fi
 done
 
+# ---------------------------------------------------------------- 可执行性
+#
+# ParseFile 只做语法解析，能通过不代表能运行 —— 实测有一处内联 if 写进
+# hashtable 字面量，PowerShell 7.5 的解析器接受、7.6 拒绝，只有真正
+# 加载脚本才会暴露。这里对每个库文件做一次实际点源加载。
+
+printf '\n== loadable (dot-source, not just parse) ==\n'
+for f in lib/windows.ps1 platform/windows.ps1; do
+    [ -f "$f" ] || continue
+    out=$("$PWSH" -NoProfile -Command "
+        \$ErrorActionPreference = 'Stop'
+        try { . './$f'; Write-Output 'OK' }
+        catch { Write-Output \"LOAD ERROR: \$_\" }
+    " 2>&1)
+    case $out in
+        *OK*) printf 'ok     %s loads\n' "$f" ;;
+        *)
+            printf 'FAILED %s does not load\n' "$f"
+            printf '%s\n' "$out" | sed 's/^/  /'
+            _rc=1
+            ;;
+    esac
+done
+
+# bootstrap.ps1 的函数定义必须能被解析并进入作用域。
+# -Help 已经覆盖了主流程，这里额外确认模块发现函数本身可调用。
+out=$("$PWSH" -NoProfile -Command "
+    \$ErrorActionPreference = 'Stop'
+    try {
+        \$null = & ./bootstrap.ps1 -List
+        Write-Output 'OK'
+    } catch { Write-Output \"RUN ERROR: \$_\" }
+" 2>&1)
+case $out in
+    *OK*) printf 'ok     bootstrap.ps1 -List runs end to end\n' ;;
+    *)
+        printf 'FAILED bootstrap.ps1 -List does not run\n'
+        printf '%s\n' "$out" | sed 's/^/  /'
+        _rc=1
+        ;;
+esac
+
 # ---------------------------------------------------------------- PSScriptAnalyzer
 
 printf '\n== PSScriptAnalyzer ==\n'

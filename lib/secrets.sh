@@ -166,11 +166,33 @@ _dot_secret_perms_ok() {
     esac
 }
 
+# 读取文件权限的八进制表示（如 600）。
+#
+# BSD 与 GNU 的 stat 参数完全不同，而且不能靠「先试一个失败了再试另一个」——
+# GNU 的 -f 是「显示文件系统信息」，对任意文件都会成功并输出无关内容，
+# 于是 `if stat -f ...; then return; fi` 会把垃圾当成权限返回。
+# 实测表现：macOS 上正确，Linux 上权限判断全部失效。
+#
+# 正确做法是校验输出：权限必须是 3-4 位数字，否则换另一种语法。
 _dot_secret_mode() {
-    if stat -f '%Lp' "$1" 2>/dev/null; then
-        return 0
-    fi
-    stat -c '%a' "$1" 2>/dev/null
+    _dot_sm_out=$(stat -c '%a' "$1" 2>/dev/null)
+    case $_dot_sm_out in
+        [0-7][0-7][0-7] | [0-7][0-7][0-7][0-7])
+            printf '%s' "$_dot_sm_out"
+            return 0
+            ;;
+    esac
+
+    _dot_sm_out=$(stat -f '%Lp' "$1" 2>/dev/null)
+    case $_dot_sm_out in
+        [0-7][0-7][0-7] | [0-7][0-7][0-7][0-7])
+            printf '%s' "$_dot_sm_out"
+            return 0
+            ;;
+    esac
+
+    # 两种都拿不到可用结果：不猜。调用方会因为空值走保守分支。
+    return 1
 }
 
 # 给命令加超时。timeout(1) 不一定存在（macOS 默认没有），
