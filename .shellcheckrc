@@ -1,0 +1,12 @@
+# shellcheck 配置。CI 与本地共用，保证两边判定一致。
+
+# 目标方言是 POSIX sh —— 引导脚本必须能在 dash 下跑。
+shell=sh
+
+# 模块的 MODULE_* 元数据由 lib/runner.sh 读取，在模块文件内部看起来"未使用"。
+# 这是模块契约的一部分，不是笔误。
+disable=SC2034
+
+# local 不在 POSIX 中，但所有真实使用的 sh（dash/ash/busybox/bash/zsh/ksh）
+# 都支持。递归函数没有它无法正确工作，见 lib/README.md。
+disable=SC3043
