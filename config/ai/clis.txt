@@ -1,0 +1,23 @@
+# AI 编码 CLI 清单。每行一个工具：
+#
+#   <命令名>|<平台>|<安装方式>|<版本参数>|<一句话说明>
+#
+# 安装方式：
+#   npm:<包名>        npm 全局安装（不用 sudo，见模块里的 PATH 处理）
+#   brew:<formula>    Homebrew
+#   script:<URL>      官方安装脚本
+#   多种方式用逗号分隔，按顺序尝试第一个可用的。
+#
+# 版本参数：查版本用的参数，留空表示不查（不是所有 CLI 都支持）。
+#
+# 安装过程绝不索取 API key、绝不触发登录 —— 认证是独立的一步，
+# 由用户在安装完成后自己完成（模块会输出指引）。
+
+# Anthropic 官方 CLI。本仓库的 config/ai/ 就是给它准备的。
+claude|all|npm:@anthropic-ai/claude-code|--version|Claude Code：Anthropic 官方编码 agent
+
+# OpenAI 的编码 CLI。
+codex|all|npm:@openai/codex|--version|Codex CLI：OpenAI 的终端编码 agent
+
+# Google 的编码 CLI。
+gemini|all|npm:@google/gemini-cli|--version|Gemini CLI：Google 的终端编码 agent

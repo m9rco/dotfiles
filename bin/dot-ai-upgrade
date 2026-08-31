@@ -1,0 +1,202 @@
+#!/usr/bin/env sh
+#
+# 显式升级已安装的 AI 编码 CLI。
+#
+# 单独做成一条命令而不是塞进引导流程 —— 引导应当幂等且可预期，
+# 每次跑都悄悄把工具升级到最新版不符合这一点（尤其在 CI 或
+# 只想改一行配置的时候）。升级要用户主动要求。
+#
+#   bin/dot-ai-upgrade              升级全部已装的 AI CLI
+#   bin/dot-ai-upgrade claude       只升级指定的
+#   bin/dot-ai-upgrade --dry-run    只看会做什么
+#
+# shellcheck shell=sh
+
+set -u
+
+DOT_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+DOT_LIB_DIR="$DOT_ROOT/lib"
+export DOT_LIB_DIR
+
+# shellcheck source=lib/log.sh
+. "$DOT_LIB_DIR/log.sh"
+
+DOT_DRY_RUN=0
+DOT_WANT=''
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        --dry-run) DOT_DRY_RUN=1 ;;
+        -h | --help)
+            cat <<EOF
+Usage: bin/dot-ai-upgrade [--dry-run] [cli...]
+
+Upgrades installed AI coding CLIs to their latest version.
+With no arguments, upgrades every CLI listed in config/ai/clis.txt
+that is currently installed.
+
+This is deliberately separate from ./bootstrap.sh: the bootstrap is
+idempotent and does not change versions of tools you already have.
+EOF
+            exit 0
+            ;;
+        -*)
+            dot_error "unknown option: $1"
+            exit 1
+            ;;
+        *) DOT_WANT="$DOT_WANT $1" ;;
+    esac
+    shift
+done
+
+MANIFEST="$DOT_ROOT/config/ai/clis.txt"
+if [ ! -f "$MANIFEST" ]; then
+    dot_error "manifest not found: $MANIFEST"
+    exit 1
+fi
+
+# 只查 PATH 里的可执行文件 —— shell alias 不算已安装（见模块里的说明）
+_present() {
+    _p_cmd=$1
+    _p_ifs=$IFS
+    IFS=:
+    for _p_dir in $PATH; do
+        if [ -x "$_p_dir/$_p_cmd" ]; then
+            IFS=$_p_ifs
+            return 0
+        fi
+    done
+    IFS=$_p_ifs
+    return 1
+}
+
+_wanted() {
+    [ -z "$DOT_WANT" ] && return 0
+    for _w in $DOT_WANT; do
+        [ "$_w" = "$1" ] && return 0
+    done
+    return 1
+}
+
+_upgraded=0
+_absent=0
+_managed=0
+_failed=''
+
+LINES=$(cat "$MANIFEST")
+
+while IFS='|' read -r cmd plat how vflag desc; do
+    case $cmd in
+        '' | \#*) continue ;;
+    esac
+
+    _wanted "$cmd" || continue
+
+    if ! _present "$cmd"; then
+        dot_skip "$cmd is not installed; nothing to upgrade"
+        _absent=$((_absent + 1))
+        continue
+    fi
+
+    # 升级前的版本，用于对比
+    before=''
+    if [ -n "$vflag" ]; then
+        before=$("$cmd" "$vflag" 2>/dev/null </dev/null | head -n 1)
+    fi
+
+    method=$(printf '%s' "$how" | cut -d, -f1)
+    kind=${method%%:*}
+    arg=${method#*:}
+
+    # 升级要用当初的安装方式。工具是被 volta / asdf / mise 这类版本管理器
+    # 装的时候，用 `npm install -g` 会在别处再装一份并遮蔽原来的那个 ——
+    # 用户会看到「升级成功」但 which 指向的还是旧副本。这种情况只提示，
+    # 让用户用对应的工具自己升。
+    path=$(
+        _p_ifs=$IFS
+        IFS=:
+        for d in $PATH; do
+            [ -x "$d/$cmd" ] && printf '%s' "$d/$cmd" && break
+        done
+        IFS=$_p_ifs
+    )
+    case $path in
+        *"/.volta/"*) manager=volta ;;
+        *"/.asdf/"*) manager=asdf ;;
+        *"/.local/share/mise/"* | *"/.mise/"*) manager=mise ;;
+        *) manager='' ;;
+    esac
+
+    if [ -n "$manager" ] && [ "$kind" = npm ]; then
+        dot_skip "$cmd is managed by $manager ($path)"
+        dot_tip "  upgrade it with: $manager install ${arg}@latest"
+        dot_tip "  (npm -g would install a second copy that shadows this one)"
+        _managed=$((_managed + 1))
+        continue
+    fi
+
+    if [ "$DOT_DRY_RUN" = 1 ]; then
+        dot_info "[dry-run] would upgrade $cmd via $kind ($arg)${before:+ — currently $before}"
+        continue
+    fi
+
+    dot_step "upgrading $cmd"
+    [ -n "$before" ] && dot_info "current: $before"
+
+    case $kind in
+        npm)
+            if npm install --global "$arg@latest" </dev/null; then
+                :
+            else
+                dot_error "$cmd: npm upgrade failed"
+                _failed="$_failed $cmd"
+                continue
+            fi
+            ;;
+        brew)
+            if brew upgrade "$arg" </dev/null 2>/dev/null; then
+                :
+            else
+                # brew upgrade 在「已是最新」时也返回非零，需要区分
+                if brew outdated "$arg" >/dev/null 2>&1; then
+                    dot_error "$cmd: brew upgrade failed"
+                    _failed="$_failed $cmd"
+                    continue
+                fi
+            fi
+            ;;
+        script)
+            if ! curl -fsSL "$arg" | sh >/dev/null 2>&1; then
+                dot_error "$cmd: install script failed"
+                _failed="$_failed $cmd"
+                continue
+            fi
+            ;;
+        *)
+            dot_error "$cmd: don't know how to upgrade via '$kind'"
+            _failed="$_failed $cmd"
+            continue
+            ;;
+    esac
+
+    after=''
+    [ -n "$vflag" ] && after=$("$cmd" "$vflag" 2>/dev/null </dev/null | head -n 1)
+
+    if [ -n "$before" ] && [ "$before" = "$after" ]; then
+        dot_success "$cmd already at the latest version ($after)"
+    else
+        dot_success "$cmd: ${before:-?} -> ${after:-?}"
+    fi
+    _upgraded=$((_upgraded + 1))
+done <<EOF
+$LINES
+EOF
+
+dot_step 'Summary'
+[ "$_upgraded" -gt 0 ] && dot_success "processed: $_upgraded"
+[ "$_absent" -gt 0 ] && dot_skip "not installed: $_absent"
+[ "$_managed" -gt 0 ] && dot_skip "managed elsewhere (upgrade with that tool): $_managed"
+if [ -n "$_failed" ]; then
+    dot_error "failed:$_failed"
+    exit 1
+fi

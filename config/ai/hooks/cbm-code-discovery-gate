@@ -1,0 +1,15 @@
+#!/bin/bash
+# codebase-memory-mcp search augmenter (Claude Code PreToolUse).
+# NOTE: the legacy filename is kept for zero-migration upgrades.
+# Despite the name this NEVER blocks a tool call - it only adds
+# graph context. Any failure is silent (exit 0, no output).
+#
+# dotfiles note: the upstream version of this file (installed by
+# codebase-memory-mcp itself) hardcodes an absolute path to the binary.
+# We resolve it at runtime instead so the same file works on any machine
+# and under any username. See config/ai/README.md.
+BIN="${CODEBASE_MEMORY_MCP_BIN:-$HOME/.local/bin/codebase-memory-mcp}"
+[ -x "$BIN" ] || BIN="$(command -v codebase-memory-mcp 2>/dev/null)"
+[ -n "$BIN" ] && [ -x "$BIN" ] || exit 0
+"$BIN" hook-augment 2>/dev/null
+exit 0

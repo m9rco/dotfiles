@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "MCP server 清单的真源。各 AI 工具的 MCP 配置由 modules/ai-agent-config 从这里渲染，",
+    "不要直接编辑各工具自己的配置文件 —— 那些是生成产物。",
+    "",
+    "路径用占位符表示，渲染时替换为当前平台的实际值：",
+    "  {{HOME}}      用户主目录",
+    "  {{DOTFILES}}  本仓库根目录",
+    "  {{EXE}}       Windows 上为 .exe，其余平台为空",
+    "",
+    "凭据一律只写 env 变量名，绝不内联值 —— 本仓库是公开的。"
+  ],
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "{{HOME}}/.local/bin/codebase-memory-mcp{{EXE}}",
+      "description": "Tree-sitter 知识图谱：结构化代码查询，替代 grep 做符号/调用链检索",
+      "platforms": ["macos", "linux", "windows"],
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,2 @@
+# 自定义 slash command 放这里（每个一个 .md 文件），会被链接到 ~/.claude/commands。
+# 目前为空 —— ~/.claude/ 下没有自定义 command，plugin 提供的不属于本仓库管理范围。

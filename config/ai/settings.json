@@ -1,0 +1,92 @@
+{
+  "$comment": [
+    "Claude Code 设置的真源。由 modules/ai-agent-config 渲染到 ~/.claude/settings.json。",
+    "占位符 {{HOME}} / {{DOTFILES}} 在渲染时替换 —— 不要写绝对路径，换机器或换用户名就失效。",
+    "本机专属的设置不要写在这里，写进不入库的 ~/.claude/settings.local.json。"
+  ],
+
+  "model": "opus[1m]",
+
+  "permissions": {
+    "allow": [
+      "mcp__codegraph__codegraph_search",
+      "mcp__codegraph__codegraph_context",
+      "mcp__codegraph__codegraph_callers",
+      "mcp__codegraph__codegraph_callees",
+      "mcp__codegraph__codegraph_impact",
+      "mcp__codegraph__codegraph_node",
+      "mcp__codegraph__codegraph_status"
+    ]
+  },
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{HOME}}/.claude/hooks/cbm-code-discovery-gate",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          { "type": "command", "command": "{{HOME}}/.claude/hooks/cbm-session-reminder" }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          { "type": "command", "command": "{{HOME}}/.claude/hooks/cbm-session-reminder" }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          { "type": "command", "command": "{{HOME}}/.claude/hooks/cbm-session-reminder" }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          { "type": "command", "command": "{{HOME}}/.claude/hooks/cbm-session-reminder" }
+        ]
+      }
+    ]
+  },
+
+  "enabledPlugins": {
+    "claude-hud@claude-hud": true,
+    "frontend-design@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "sourcegraph@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true
+  },
+
+  "extraKnownMarketplaces": {
+    "claude-hud": {
+      "source": {
+        "source": "github",
+        "repo": "jarrodwatts/claude-hud"
+      }
+    }
+  },
+
+  "$comment_statusline": [
+    "claude-hud 状态栏。上游写法里 bun 是绝对路径，这里改成运行时查找：",
+    "先试 PATH，再回退 ~/.bun/bin/bun —— 这样换机器/换用户名都不用改。",
+    "bun 或插件任一缺失时静默退出，不要让状态栏错误刷屏。"
+  ],
+  "statusLine": {
+    "type": "command",
+    "command": "bash -c 'cols=${COLUMNS:-}; case \"$cols\" in \"\"|*[!0-9]*) cols=$(stty size </dev/tty 2>/dev/null | awk '\"'\"'{print $2}'\"'\"');; esac; case \"$cols\" in \"\"|*[!0-9]*) cols=120;; esac; export COLUMNS=$(( cols > 4 ? cols - 4 : 1 )); plugin_dir=$(ls -d \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/plugins/cache/*/claude-hud/*/ 2>/dev/null | awk -F/ '\"'\"'{ print $(NF-1) \"\\t\" $(0) }'\"'\"' | grep -E '\"'\"'^[0-9]+\\.[0-9]+\\.[0-9]+[[:space:]]'\"'\"' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1 | cut -f2-); [ -n \"$plugin_dir\" ] || exit 0; bun_bin=$(command -v bun 2>/dev/null || echo \"$HOME/.bun/bin/bun\"); [ -x \"$bun_bin\" ] || exit 0; exec \"$bun_bin\" --env-file /dev/null \"${plugin_dir}src/index.ts\"'"
+  },
+
+  "skipDangerousModePermissionPrompt": true
+}
