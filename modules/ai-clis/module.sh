@@ -37,11 +37,11 @@ install() {
             '' | \#*) continue ;;
         esac
 
-        [ -n "$_dot_ac_plat" ] && [ -n "$_dot_ac_how" ] || {
+        if [ -z "$_dot_ac_plat" ] || [ -z "$_dot_ac_how" ]; then
             dot_error "malformed manifest line for '$_dot_ac_cmd' (need cmd|platforms|how|versionflag|desc)"
             _dot_ac_failed="$_dot_ac_failed $_dot_ac_cmd"
             continue
-        }
+        fi
 
         # 子集筛选：DOT_AI_CLIS 给出时只装其中列出的
         if [ -n "${DOT_AI_CLIS:-}" ] && ! _dot_ac_in "$_dot_ac_cmd" "$DOT_AI_CLIS"; then

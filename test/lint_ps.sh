@@ -39,9 +39,14 @@ printf '== syntax ==\n'
 for f in bootstrap.ps1 lib/windows.ps1 platform/windows.ps1 \
     config/powershell/profile.ps1 modules/*/module.ps1; do
     [ -f "$f" ] || continue
+    # 传相对路径并让 PowerShell 在仓库根解析 —— 不能拼 $DOT_ROOT：
+    # 在 Git-Bash（Windows CI）下它是 /d/a/repo 这种 POSIX 形式，
+    # PowerShell 会把它当成 D:\d\a\repo 而找不到文件。
     out=$("$PWSH" -NoProfile -Command "
+        Set-Location -LiteralPath (Resolve-Path '.')
         \$e = \$null
-        [System.Management.Automation.Language.Parser]::ParseFile('$DOT_ROOT/$f', [ref]\$null, [ref]\$e) | Out-Null
+        \$full = (Resolve-Path -LiteralPath '$f').Path
+        [System.Management.Automation.Language.Parser]::ParseFile(\$full, [ref]\$null, [ref]\$e) | Out-Null
         if (\$e) { \$e | ForEach-Object { Write-Output \"L\$(\$_.Extent.StartLineNumber): \$(\$_.Message)\" } }
     " 2>&1)
     if [ -n "$out" ]; then

@@ -167,11 +167,13 @@ rm -f "$FIX/bin/alreadythere"
 # ------------------------------------------------------------------ 平台筛选
 
 printf '\n== platform filtering ==\n'
+# 显式钉住 DOT_OS —— 否则断言会随运行环境的平台而变
+# （本机 macOS 通过、Ubuntu runner 上全红）
 MANIFEST="everywhere|all|default||all platforms
-maconly|macos|default||mac only
-linuxonly|linux|default||linux only"
-out=$(runcli "$MANIFEST")
-expect 'only entries for this platform install' 'everywhere maconly' "$(installed_log)"
+thisplatform|macos|default||only for the pinned platform
+otherplatform|windows|default||not for the pinned platform"
+out=$(DOT_OS=macos runcli "$MANIFEST")
+expect 'only entries for the current platform install' 'everywhere thisplatform' "$(installed_log)"
 expect_has 'skipped entry states the platform' 'not for macos' "$out"
 
 # ------------------------------------------------------------------ optional

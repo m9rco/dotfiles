@@ -60,11 +60,11 @@ install() {
         case $_dot_f_name in
             '' | \#*) continue ;;
         esac
-        [ -n "$_dot_f_url" ] && [ -n "$_dot_f_prefix" ] || {
+        if [ -z "$_dot_f_url" ] || [ -z "$_dot_f_prefix" ]; then
             dot_error "malformed manifest line for '$_dot_f_name' (need name|url|prefix)"
             _dot_f_failed="$_dot_f_failed $_dot_f_name"
             continue
-        }
+        fi
 
         _dot_f_total=$((_dot_f_total + 1))
 

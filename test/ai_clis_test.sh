@@ -107,12 +107,38 @@ chmod +x "$BIN/npm"
 printf '#!/bin/sh\necho v22.0.0\n' >"$BIN/node"
 chmod +x "$BIN/node"
 
-# 基础工具从系统借
-for t in cat sed grep tr cut head mktemp rm mkdir chmod printf find ls cmp date dirname basename od dd wc sort uniq env sh uname id; do
-    [ -e "$BIN/$t" ] && continue
-    p=$(command -v "$t" 2>/dev/null) || continue
-    ln -sf "$p" "$BIN/$t" 2>/dev/null || true
+# PATH 的构造有两个互相拉扯的要求：
+#   1. 基础工具必须齐全 —— 手工列清单两次漏项（ln、readlink），
+#      表现为模块在建链接时就失败，测试却把锅算在被测代码上
+#   2. 真实的 AI CLI 必须不可见 —— 否则模块正确地跳过安装，
+#      而断言期待的是「装了什么」，于是全红
+#
+# 解决：继承真实 PATH 拿到基础工具，但把真实 AI CLI 所在的目录剔除。
+# 替身目录前置，覆盖 npm/node。
+# 用一个排除文件 + grep -vxF 完成过滤。不写成 `... | while read` ——
+# 管道里的 while 在子 shell 中执行，循环外设的 _excluded 在里面是空的，
+# 过滤会静默失效（这个坑在 lib/fs.sh 里已经踩过一次）。
+DOT_EXCL="$FIX/excluded-dirs"
+: >"$DOT_EXCL"
+for _c in claude codex gemini; do
+    # 必须遍历 PATH 找可执行文件，不能用 command -v ——
+    # 它会返回 alias 定义（实测 claude 就是个 alias），dirname 得到 "."，
+    # 于是排除的是当前目录而不是真实 CLI 所在目录，过滤静默失效。
+    # 这正是被测模块里 _dot_ac_present 要绕开 command -v 的同一个原因。
+    _ifs=$IFS
+    IFS=:
+    for _d in $PATH; do
+        [ -n "$_d" ] || continue
+        if [ -x "$_d/$_c" ]; then
+            printf '%s\n' "$_d" >>"$DOT_EXCL"
+        fi
+    done
+    IFS=$_ifs
 done
+# 空的排除文件会让 grep -vxF -f 过滤掉所有行，加一个不可能匹配的哨兵
+printf '%s\n' '__no_such_dir__' >>"$DOT_EXCL"
+DOT_FAKE_PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF -f "$DOT_EXCL" | paste -sd: -)
+DOT_FAKE_PATH="$BIN:$DOT_FAKE_PATH"
 
 # 跑 ai-clis 模块，PATH 只含替身 bin
 runai() {
@@ -131,7 +157,7 @@ runai() {
         DOT_TEST_NPM_FAIL="${DOT_TEST_NPM_FAIL:-}" \
         DOT_AI_CLIS="${DOT_AI_CLIS:-}" \
         HOME="$FIX/home" \
-        PATH="$FIX/instbin:$BIN" \
+        PATH="$FIX/instbin:$DOT_FAKE_PATH" \
         sh "$BOOT" --only ai-clis "$@" 2>&1
 }
 
@@ -172,7 +198,7 @@ printf '{"mcpServers":{}}\n' >"$FIX/cfg/ai/mcp.json"
 rm -rf "$FIX/instbin"
 mkdir -p "$FIX/instbin"
 DOT_CONFIG_DIR="$FIX/cfg" DOT_TEST_LOG="$FIX/npm.log" DOT_TEST_BIN="$FIX/instbin" \
-    HOME="$FIX/home" PATH="$FIX/instbin:$BIN" \
+    HOME="$FIX/home" PATH="$FIX/instbin:$DOT_FAKE_PATH" \
     sh "$BOOT" --only ai-clis >/dev/null 2>&1
 expect 'module exits 0 despite the version check' 0 "$?"
 
@@ -187,7 +213,7 @@ printf '%s\n' "claude|all|npm:@anthropic-ai/claude-code|--version|c" >"$FIX/cfg/
 printf '{"mcpServers":{}}\n' >"$FIX/cfg/ai/mcp.json"
 : >"$FIX/npm.log"
 out=$(DOT_CONFIG_DIR="$FIX/cfg" DOT_TEST_LOG="$FIX/npm.log" DOT_TEST_BIN="$FIX/instbin" \
-    HOME="$FIX/home" PATH="$FIX/instbin:$BIN" sh "$BOOT" --only ai-clis 2>&1)
+    HOME="$FIX/home" PATH="$FIX/instbin:$DOT_FAKE_PATH" sh "$BOOT" --only ai-clis 2>&1)
 expect_has 'reports it as already installed' 'claude already installed' "$out"
 expect_has 'reports the existing version' '5.5.5' "$out"
 expect_lacks 'no install is attempted' 'install --global' "$(npmlog)"
@@ -201,7 +227,7 @@ printf '\n== a shell alias does not count as installed ==\n'
 # 在一个 claude 确实不存在的 PATH 上定义 alias，检测必须仍报「不存在」。
 alias_probe=$(
     DOT_LIB_DIR="$DOT_REPO/lib" \
-        PATH="$FIX/emptybin:$BIN" \
+        PATH="$FIX/emptybin:$DOT_FAKE_PATH" \
         sh -c '
         . "$DOT_LIB_DIR/log.sh"
         . "'"$DOT_REPO"'/modules/ai-clis/module.sh"
@@ -217,7 +243,7 @@ printf '#!/bin/sh\nexit 0\n' >"$FIX/hasbin/claude"
 chmod +x "$FIX/hasbin/claude"
 present_probe=$(
     DOT_LIB_DIR="$DOT_REPO/lib" \
-        PATH="$FIX/hasbin:$BIN" \
+        PATH="$FIX/hasbin:$DOT_FAKE_PATH" \
         sh -c '
         . "$DOT_LIB_DIR/log.sh"
         . "'"$DOT_REPO"'/modules/ai-clis/module.sh"
@@ -259,23 +285,31 @@ expect_has 'points at the keychain, not the repo' 'keychain' "$out"
 # ------------------------------------------------------------------ npm 缺失
 
 printf '\n== missing npm is reported, not fatal to the rest ==\n'
+# 「npm 缺失」的场景不能靠从 PATH 里过滤 npm 所在目录来模拟 ——
+# npm 可能同时存在于多个目录（实测 nvm 与 homebrew 各一份），
+# 过滤一个不够、逐个过滤又脆弱。
+#
+# 改为构造一个只含必要基础工具的目录，并显式不放 npm。
+# 工具清单从 bootstrap 实际用到的推导，缺了哪个会立刻在断言里暴露。
 NONPM="$FIX/nonpm"
 mkdir -p "$NONPM"
-for t in cat sed grep tr cut head mktemp rm mkdir chmod printf find ls cmp date dirname basename od dd wc sort uniq env sh uname id; do
-    p=$(command -v "$t" 2>/dev/null) || continue
-    ln -sf "$p" "$NONPM/$t" 2>/dev/null || true
+for _t in sh dash printf grep sed awk cat cut head tail tr sort uniq wc \
+    ls find mkdir rm rmdir mv cp ln readlink chmod cmp mktemp date \
+    dirname basename env uname id od dd tee xargs stty paste; do
+    _p=$(command -v "$_t" 2>/dev/null) || continue
+    ln -sf "$_p" "$NONPM/$_t" 2>/dev/null || true
 done
-mkdir -p "$FIX/cfg/ai"
-printf '%s\n' "claude|all|npm:@anthropic-ai/claude-code|--version|c" >"$FIX/cfg/ai/clis.txt"
-printf '{"mcpServers":{}}\n' >"$FIX/cfg/ai/mcp.json"
-out=$(DOT_CONFIG_DIR="$FIX/cfg" HOME="$FIX/home" PATH="$NONPM" sh "$BOOT" --only ai-clis 2>&1)
+NONPM_PATH="$NONPM"
+
+out=$(DOT_CONFIG_DIR="$FIX/cfg" HOME="$FIX/home" PATH="$NONPM_PATH" sh "$BOOT" --only ai-clis 2>&1)
 expect_has 'missing npm is named as the reason' 'needs npm' "$out"
 expect_has 'suggests installing node' 'install node' "$out"
 
 # ------------------------------------------------------------------ 平台
 
 printf '\n== platform filtering ==\n'
-out=$(DOT_AI_CLIS= runai "linuxonly|linux|npm:@x/l|--version|linux only
+# 钉住 DOT_OS：断言里写了具体平台名，不能随运行环境变化
+out=$(DOT_AI_CLIS= DOT_OS=macos runai "linuxonly|linux|npm:@x/l|--version|linux only
 claude|all|npm:@anthropic-ai/claude-code|--version|everywhere")
 expect_has 'entry for another platform is skipped with a reason' 'linuxonly: not for macos' "$out"
 expect_has 'the all-platform entry still installs' '@anthropic-ai/claude-code' "$(npmlog)"
@@ -312,7 +346,7 @@ out=$(sh "$UPGRADE" --help 2>&1)
 expect_has 'help says it is separate from bootstrap' 'separate from ./bootstrap.sh' "$out"
 
 printf '\n== upgrade skips tools that are not installed ==\n'
-out=$(HOME="$FIX/home" PATH="$NONPM" sh "$UPGRADE" --dry-run 2>&1)
+out=$(HOME="$FIX/home" PATH="$NONPM_PATH" sh "$UPGRADE" --dry-run 2>&1)
 expect_has 'absent tool is reported' 'is not installed' "$out"
 
 printf '\n== upgrade uses @latest ==\n'
@@ -321,7 +355,7 @@ printf '#!/bin/sh\necho 1.0.0\n' >"$FIX/instbin/gemini"
 chmod +x "$FIX/instbin/gemini"
 : >"$FIX/npm.log"
 out=$(DOT_TEST_LOG="$FIX/npm.log" DOT_TEST_BIN="$FIX/instbin" HOME="$FIX/home" \
-    PATH="$FIX/instbin:$BIN" sh "$UPGRADE" gemini 2>&1)
+    PATH="$FIX/instbin:$DOT_FAKE_PATH" sh "$UPGRADE" gemini 2>&1)
 expect_has 'installs the @latest tag' '@google/gemini-cli@latest' "$(npmlog)"
 
 printf '\n== upgrade refuses to shadow a version-manager copy ==\n'
@@ -330,7 +364,7 @@ mkdir -p "$VOLTA"
 printf '#!/bin/sh\necho 2.0.0\n' >"$VOLTA/claude"
 chmod +x "$VOLTA/claude"
 : >"$FIX/npm.log"
-out=$(DOT_TEST_LOG="$FIX/npm.log" HOME="$FIX/home" PATH="$VOLTA:$BIN" \
+out=$(DOT_TEST_LOG="$FIX/npm.log" HOME="$FIX/home" PATH="$VOLTA:$DOT_FAKE_PATH" \
     sh "$UPGRADE" claude 2>&1)
 expect_has 'volta ownership is detected' 'managed by volta' "$out"
 expect_has 'suggests the right command' 'volta install' "$out"

@@ -129,7 +129,11 @@ runfonts() {
     shift 2
     mkdir -p "$FIX/cfg/fonts"
     printf '%s\n' "$_rf_manifest" >"$FIX/cfg/fonts/fonts.txt"
+    # 必须清掉 headless 信号：字体模块声明了 MODULE_NEEDS_GUI，
+    # 在 CI（CI=1）或 SSH 会话里会被 runner 跳过，那样所有安装断言都会失败。
+    # 本地跑通、CI 全红就是这个原因 —— 本机没有 CI 变量。
     DOT_CONFIG_DIR="$FIX/cfg" DOT_FONT_DIR="$_rf_fontdir" \
+        CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
         sh "$BOOT" --only fonts "$@" 2>&1
 }
 
@@ -140,6 +144,7 @@ rcfonts() {
     mkdir -p "$FIX/cfg/fonts"
     printf '%s\n' "$_rc_manifest" >"$FIX/cfg/fonts/fonts.txt"
     DOT_CONFIG_DIR="$FIX/cfg" DOT_FONT_DIR="$_rc_fontdir" \
+        CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
         sh "$BOOT" --only fonts "$@" >/dev/null 2>&1
     printf '%s' "$?"
 }

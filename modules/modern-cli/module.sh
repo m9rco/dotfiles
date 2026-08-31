@@ -41,11 +41,11 @@ install() {
             '' | \#*) continue ;;
         esac
 
-        [ -n "$_dot_cli_plat" ] && [ -n "$_dot_cli_tag" ] || {
+        if [ -z "$_dot_cli_plat" ] || [ -z "$_dot_cli_tag" ]; then
             dot_error "malformed manifest line for '$_dot_cli_name' (need name|platforms|tag|fallback|desc)"
             _dot_cli_failed="$_dot_cli_failed $_dot_cli_name"
             continue
-        }
+        fi
 
         # 平台筛选。all 是三平台的简写。
         if [ "$_dot_cli_plat" != all ] && ! _dot_cli_in "$DOT_OS" "$_dot_cli_plat"; then
