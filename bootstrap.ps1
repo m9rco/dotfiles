@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     AI 时代的 dotfiles —— Windows 原生引导入口。
 

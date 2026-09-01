@@ -1,4 +1,4 @@
-# Nerd Fonts（Windows 侧）。
+﻿# Nerd Fonts（Windows 侧）。
 #
 # 读同一份 config/fonts/fonts.txt。Windows 与 Unix 的差别在于：
 # 字体文件落地后还要写用户注册表才能被应用枚举到（写 HKCU 免提权）。

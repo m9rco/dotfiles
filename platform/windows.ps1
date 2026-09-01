@@ -1,4 +1,4 @@
-# Windows 平台适配层。
+﻿# Windows 平台适配层。
 #
 # 把「在 Windows 上怎么做」收敛在这里，模块层不出现平台判断 ——
 # 与 platform/macos.sh、platform/linux.sh 同一约定。

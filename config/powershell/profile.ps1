@@ -1,4 +1,4 @@
-# PowerShell profile。Windows 侧与 config/zsh/ 的对位物。
+﻿# PowerShell profile。Windows 侧与 config/zsh/ 的对位物。
 #
 # 与 zsh 侧共享同一份 config/starship.toml —— 那是三平台 prompt 一致的关键。
 #

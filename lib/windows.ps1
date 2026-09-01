@@ -1,4 +1,4 @@
-# PowerShell 侧的共享函数：日志、平台探测、幂等文件操作。
+﻿# PowerShell 侧的共享函数：日志、平台探测、幂等文件操作。
 #
 # 与 lib/log.sh + lib/detect.sh + lib/fs.sh 对应，语义保持一致 ——
 # 尤其是 dot_link 的四种情形与备份行为，那是两侧都不能妥协的部分。

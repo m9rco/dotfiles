@@ -1,4 +1,4 @@
-# PowerShell 环境：PowerShell 7 + profile。
+﻿# PowerShell 环境：PowerShell 7 + profile。
 #
 # Windows 原生没有 zsh（那是 WSL 的事），所以这里是 Unix 侧 zsh 模块的对位物：
 # 同样接 starship、同样的现代 CLI 别名、同样的本地覆盖机制。

@@ -1,4 +1,4 @@
-# Windows Terminal —— 现代终端，支持 Nerd Font 与真彩色。
+﻿# Windows Terminal —— 现代终端，支持 Nerd Font 与真彩色。
 # 旧的 conhost 无法正确显示 starship 的图标与颜色。
 
 $DotModule = @{

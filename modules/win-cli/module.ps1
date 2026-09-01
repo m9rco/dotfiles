@@ -1,4 +1,4 @@
-# 现代 CLI 工具链（Windows 侧）。
+﻿# 现代 CLI 工具链（Windows 侧）。
 #
 # 读的是同一份 config/cli/tools.txt —— 清单跨平台共享，
 # 只有「逻辑名 -> 包名」的映射是平台相关的（在 platform/windows.ps1 里）。

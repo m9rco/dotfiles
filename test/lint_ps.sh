@@ -69,6 +69,21 @@ printf '\n== fragile constructs ==\n'
 
 _frag=0
 
+# 含非 ASCII 的 .ps1 必须带 UTF-8 BOM，否则 PowerShell 5.1 读成乱码
+for _f in bootstrap.ps1 lib/*.ps1 platform/*.ps1 modules/*/module.ps1 \
+    config/powershell/*.ps1; do
+    [ -f "$_f" ] || continue
+    # 有非 ASCII 字节吗？
+    if LC_ALL=C grep -q '[^ -~	]' "$_f" 2>/dev/null; then
+        # 前三字节必须是 EF BB BF
+        if [ "$(dd if="$_f" bs=3 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" != efbbbf ]; then
+            printf 'FAILED: %s has non-ASCII content but no UTF-8 BOM\n' "$_f"
+            printf '        PowerShell 5.1 will misparse it (MissingEndCurlyBrace)\n'
+            _frag=1
+        fi
+    fi
+done
+
 # 反引号续行：对解析器敏感，且行尾多一个空格就静默失效
 if grep -nE '`$' bootstrap.ps1 lib/*.ps1 platform/*.ps1 modules/*/module.ps1 \
     config/powershell/*.ps1 2>/dev/null; then
@@ -148,13 +163,16 @@ printf '\n== PSScriptAnalyzer ==\n'
 #                                   我们用 -DryRun 统一两侧的语义，
 #                                   混用两套会让行为更难预测。
 #   PSUseSingularNouns              Get-DotModules 返回多个模块，复数是对的。
-#   PSUseBOMForUnicodeEncodedFile   带 BOM 会让 Unix 侧工具（git diff、
-#                                   静态检查器、部分编辑器）解析异常。
-#                                   PowerShell 5.1 读无 BOM 的 UTF-8 没问题。
+# 注意：PSUseBOMForUnicodeEncodedFile **不能**豁免。
+# 我最初以此为「带 BOM 会干扰 Unix 侧工具」而关掉它，那个判断是错的：
+# PowerShell 5.1 对无 BOM 的 UTF-8 按系统代码页解析，含中文注释的文件
+# 会被拆成乱码字节，花括号匹配随之失效 —— CI 上表现为
+# MissingEndCurlyBrace 且错误位置指向整个函数。
+# 现代 git 与编辑器处理 BOM 没有问题，而 5.1 兼容是硬要求。
 #   PSUseDeclaredVarsMoreThanAssignments
 #                                   $DotModule 是模块契约，由 runner 读取，
 #                                   在模块文件内部看起来「未使用」。
-EXCLUDE='PSAvoidUsingWriteHost,PSAvoidUsingInvokeExpression,PSUseShouldProcessForStateChangingFunctions,PSUseSingularNouns,PSUseBOMForUnicodeEncodedFile,PSUseDeclaredVarsMoreThanAssignments'
+EXCLUDE='PSAvoidUsingWriteHost,PSAvoidUsingInvokeExpression,PSUseShouldProcessForStateChangingFunctions,PSUseSingularNouns,PSUseDeclaredVarsMoreThanAssignments'
 
 has_analyzer=$("$PWSH" -NoProfile -Command "
     if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' } else { 'no' }
