@@ -253,8 +253,16 @@ _dot_detect_headless() {
         DOT_HEADLESS=1
     elif [ -n "${CI:-}" ]; then
         DOT_HEADLESS=1
-    elif [ -f /.dockerenv ] || [ -f /run/.containerenv ]; then
-        DOT_HEADLESS=1
+    else
+        # 容器标记文件。路径可用 DOT_CONTAINER_PROBE_FILES 覆盖 ——
+        # 否则在容器里跑测试时 /.dockerenv 恒存在，「无标记则非 headless」
+        # 那条断言永远无法通过（CI 的容器 job 实测如此）。
+        for _dot_ch in ${DOT_CONTAINER_PROBE_FILES:-/.dockerenv /run/.containerenv}; do
+            if [ -f "$_dot_ch" ]; then
+                DOT_HEADLESS=1
+                break
+            fi
+        done
     fi
 }
 

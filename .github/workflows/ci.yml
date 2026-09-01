@@ -346,6 +346,14 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Trust the checkout directory
+        run: |
+          # 容器里的用户与 checkout 的属主不同，git 会拒绝操作并报
+          # "detected dubious ownership" —— 迁移断言里的 git submodule status
+          # 因此拿到错误信息而非空输出。
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$(pwd)"
+
       - name: Detection works with nothing preinstalled
         run: |
           ./bootstrap.sh --info

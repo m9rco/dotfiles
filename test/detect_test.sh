@@ -145,9 +145,18 @@ expect 'CI set -> headless' 1 "$(probe DOT_HEADLESS CI=true)"
 expect 'SSH_CONNECTION set -> headless' 1 "$(probe DOT_HEADLESS SSH_CONNECTION='1.2.3.4 22 5.6.7.8 22')"
 expect 'SSH_TTY set -> headless' 1 "$(probe DOT_HEADLESS SSH_TTY=/dev/pts/0)"
 expect 'SSH_CLIENT set -> headless' 1 "$(probe DOT_HEADLESS SSH_CLIENT='1.2.3.4 22 22')"
-# 显式清空这些变量，避免测试本身跑在 SSH/CI 里时干扰结果
+# 显式清空这些变量，避免测试本身跑在 SSH/CI 里时干扰结果。
+# 容器标记也要指向不存在的路径 —— 在容器里跑测试时 /.dockerenv 恒存在，
+# 否则这条断言永远失败（CI 的容器 job 实测如此）。
 expect 'no markers -> not headless' 0 \
-    "$(probe DOT_HEADLESS CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT=)"
+    "$(probe DOT_HEADLESS CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+        DOT_CONTAINER_PROBE_FILES="$DOT_TEST_TMP/no-such-container-marker")"
+
+# 反面：容器标记存在时必须是 headless
+printf 'marker\n' >"$DOT_TEST_TMP/fake-dockerenv"
+expect 'container marker -> headless' 1 \
+    "$(probe DOT_HEADLESS CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+        DOT_CONTAINER_PROBE_FILES="$DOT_TEST_TMP/fake-dockerenv")"
 
 printf '\n== distro is empty on non-linux ==\n'
 expect 'macOS has no distro' '' "$(probe DOT_DISTRO DOT_OS=macos)"

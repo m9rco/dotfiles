@@ -338,7 +338,7 @@ printf '\n== default shell handling ==\n'
 ZBIN="$FIX/zshbin"
 mkdir -p "$ZBIN"
 for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink cmp mv cp wc od dd sort uniq stty; do
-    p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$ZBIN/$t" 2>/dev/null || true
+    if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$ZBIN/$t" 2>/dev/null || true; fi
 done
 # 替身 zsh 与 chsh
 printf '#!/bin/sh\nexit 0\n' >"$ZBIN/zsh"
@@ -375,7 +375,7 @@ expect 'already-zsh never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 NOZSH="$FIX/nozsh"
 mkdir -p "$NOZSH"
 for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink cmp mv cp wc od dd sort uniq stty; do
-    p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$NOZSH/$t" 2>/dev/null || true
+    if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$NOZSH/$t" 2>/dev/null || true; fi
 done
 : >"$FIX/install.log"
 out=$(env -i HOME="$FIX/zhome2" PATH="$NOZSH" CI=1 \

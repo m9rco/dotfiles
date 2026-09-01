@@ -220,7 +220,10 @@ out=$(DOT_MODULES_DIR="$FIX" CI=1 sh "$BOOT" --tag filt 2>&1)
 expect_lacks 'GUI module skipped when headless' 'RAN:guimod' "$out"
 expect_has 'headless skip states the reason' 'requires a graphical environment' "$out"
 
-out=$(DOT_MODULES_DIR="$FIX" CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= sh "$BOOT" --tag filt 2>&1)
+# 容器标记指向不存在的文件 —— 否则在容器里跑测试时恒为 headless
+out=$(DOT_MODULES_DIR="$FIX" CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+    DOT_CONTAINER_PROBE_FILES="$FIX/no-such-marker" \
+    sh "$BOOT" --tag filt 2>&1)
 expect_has 'GUI module runs when not headless' 'RAN:guimod' "$out"
 rm -rf "$FIX/winonly" "$FIX/guimod"
 

@@ -199,7 +199,10 @@ _dot_ac_npm_install() {
     _dot_an_cmd=$1
     _dot_an_pkg=$2
 
-    if ! command -v npm >/dev/null 2>&1; then
+    # 用与 CLI 相同的判定（显式遍历 PATH 找可执行文件）——
+    # command -v 会被 alias 骗，也会跳过不可执行的同名文件继续往后找，
+    # 两种行为都让「npm 是否可用」变得难以推理与测试。
+    if ! _dot_ac_present npm; then
         dot_error "$_dot_an_cmd needs npm, which is not installed"
         dot_tip 'install node (e.g. via nvm or your package manager) and rerun'
         return 1

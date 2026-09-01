@@ -351,7 +351,7 @@ printf '\n== 1Password CLI as an optional source ==\n'
 OPBIN="$FIX/opbin"
 mkdir -p "$OPBIN"
 for t in sh printf sed grep head cat command timeout; do
-    p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$OPBIN/$t" 2>/dev/null || true
+    if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$OPBIN/$t" 2>/dev/null || true; fi
 done
 
 # 替身 op：已登录，read 返回一个值
@@ -408,7 +408,7 @@ fi
 # op 完全不存在时，回退到其他来源且不报错
 mkdir -p "$FIX/noop"
 for t in sh printf sed grep head cat command; do
-    p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$FIX/noop/$t" 2>/dev/null || true
+    if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$FIX/noop/$t" 2>/dev/null || true; fi
 done
 mkdir -p "$FIX/ophome"
 printf 'FALLBACK_KEY=from-file\n' >"$FIX/ophome/env.local"

@@ -48,7 +48,18 @@ printf '== git submodules are gone for good ==\n'
 expect 'no gitlinks remain in the index' '0' \
     "$(git ls-files -s | awk '$1=="160000"' | wc -l | tr -d ' ')"
 ok_if '.gitmodules does not exist' '[ ! -f .gitmodules ]'
-expect 'git submodule status is empty' '' "$(git submodule status 2>&1)"
+# git 在属主不匹配时会拒绝操作（容器 CI 里常见）。那不是「有子模块」，
+# 要单独识别，否则断言的失败信息会指向错误的方向。
+_sub_status=$(git submodule status 2>&1)
+case $_sub_status in
+    *'dubious ownership'*)
+        printf 'skip git submodule status (git refuses: dubious ownership)\n'
+        printf '     fix in CI with: git config --global --add safe.directory <path>\n'
+        ;;
+    *)
+        expect 'git submodule status is empty' '' "$_sub_status"
+        ;;
+esac
 ok_if '.git/modules has no leftovers' '[ -z "$(ls -A .git/modules 2>/dev/null)" ]'
 ok_if 'docker/ is gone from the working tree' '[ ! -d docker ]'
 

@@ -291,15 +291,26 @@ printf '\n== missing npm is reported, not fatal to the rest ==\n'
 #
 # 改为构造一个只含必要基础工具的目录，并显式不放 npm。
 # 工具清单从 bootstrap 实际用到的推导，缺了哪个会立刻在断言里暴露。
-NONPM="$FIX/nonpm"
-mkdir -p "$NONPM"
-for _t in sh dash printf grep sed awk cat cut head tail tr sort uniq wc \
-    ls find mkdir rm rmdir mv cp ln readlink chmod cmp mktemp date \
-    dirname basename env uname id od dd tee xargs stty paste; do
-    _p=$(command -v "$_t" 2>/dev/null) || continue
-    ln -sf "$_p" "$NONPM/$_t" 2>/dev/null || true
-done
-NONPM_PATH="$NONPM"
+# 「npm 缺失」的场景。
+#
+# 试过三种做法都不可靠：手工列基础工具清单（三次漏项）、过滤单个 npm 目录
+# （npm 可能在多处）、用不可执行文件遮蔽（command -v 会跳过它继续找）。
+#
+# 可靠的做法：从真实 PATH 出发，剔除**所有**含 npm 可执行文件的目录。
+# 基础工具仍来自真实 PATH，只有 npm 真的不见了。
+NONPM_PATH=$(
+    _npm_dirs="$FIX/npm-dirs"
+    : >"$_npm_dirs"
+    _ifs=$IFS
+    IFS=:
+    for _d in $DOT_FAKE_PATH; do
+        [ -n "$_d" ] || continue
+        [ -x "$_d/npm" ] && printf '%s\n' "$_d" >>"$_npm_dirs"
+    done
+    IFS=$_ifs
+    printf '%s\n' '__never_matches__' >>"$_npm_dirs"
+    printf '%s' "$DOT_FAKE_PATH" | tr ':' '\n' | grep -vxF -f "$_npm_dirs" | paste -sd: -
+)
 
 out=$(DOT_CONFIG_DIR="$FIX/cfg" HOME="$FIX/home" PATH="$NONPM_PATH" sh "$BOOT" --only ai-clis 2>&1)
 expect_has 'missing npm is named as the reason' 'needs npm' "$out"
