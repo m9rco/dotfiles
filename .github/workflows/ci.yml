@@ -229,8 +229,18 @@ jobs:
       - name: -Info under PowerShell 5.1
         shell: powershell
         run: |
-          .\bootstrap.ps1 -Info
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # 同上：要拿退出码必须走独立进程。在会话内直接调用时
+          # $LASTEXITCODE 不反映脚本的 exit，这条检查会形同虚设。
+          #
+          # 这一步是 5.1 兼容性的关键验证 —— Windows 自带的就是 5.1，
+          # 引导不能假设 PowerShell 7 已存在。
+          & powershell -NoProfile -File .\bootstrap.ps1 -Info
+          $rc = $LASTEXITCODE
+          Write-Output "exit code was: $rc"
+          if ($rc -ne 0) {
+            Write-Error 'bootstrap.ps1 -Info failed under PowerShell 5.1'
+            exit 1
+          }
 
       - name: -Info reports every detection key
         shell: pwsh
@@ -268,9 +278,15 @@ jobs:
       - name: unknown module exits non-zero
         shell: pwsh
         run: |
-          .\bootstrap.ps1 -Only definitely-not-a-module 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            Write-Error 'unknown module should have failed'
+          # 必须作为**独立进程**调用才能拿到退出码。
+          # `shell: pwsh` 下直接 `.\bootstrap.ps1` 是在当前会话里执行，
+          # 脚本里的 exit 1 会结束整个 shell，而 $LASTEXITCODE 只反映
+          # 外部进程的退出码 —— 于是这条断言永远看到 0（实测如此）。
+          & pwsh -NoProfile -File .\bootstrap.ps1 -Only definitely-not-a-module 2>$null
+          $rc = $LASTEXITCODE
+          Write-Output "exit code was: $rc"
+          if ($rc -eq 0) {
+            Write-Error 'unknown module should have exited non-zero'
             exit 1
           }
 
