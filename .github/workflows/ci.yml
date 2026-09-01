@@ -289,6 +289,10 @@ jobs:
             Write-Error 'unknown module should have exited non-zero'
             exit 1
           }
+          # 必须显式 exit 0。GitHub 的 pwsh 包装器在步骤结束时会看
+          # $LASTEXITCODE —— 这里它是被测命令留下的 1，步骤会被判为失败，
+          # 尽管断言本身通过了。
+          exit 0
 
       - name: link primitive backs up existing files
         shell: pwsh
