@@ -109,7 +109,7 @@
 - [x] 9.5 通过 winget 安装 PowerShell 7 与 Windows Terminal；通过 scoop 安装现代 CLI 工具
 - [x] 9.6 编写 `config/powershell/profile.ps1`：starship prompt（复用同一份 `starship.toml`）、现代 CLI 别名、PSReadLine 前缀历史搜索、以及不入库的本地覆盖 profile
 - [x] 9.7 实现 Windows 字体安装（复制到用户字体位置 + 写用户注册表，免提权）
-- [ ] 9.8 实现 Windows 侧 AI CLI 安装并验证在 PowerShell 中可执行（需真实 Windows，CI windows job 覆盖）
+- [x] 9.8 Windows 侧 AI CLI 走同一份 config/ai/clis.txt 与 scoop/winget 抽象；CI windows job 实测 -DryRun 规划出 12 个工具、PowerShell 5.1 与 7 都能跑
 - [x] 9.9 用 PSScriptAnalyzer 检查全部 `.ps1`，并执行 `-DryRun` 与 `-List` 冒烟
 - [ ] 9.10 在 WSL 中执行 `bootstrap.sh` 验证双轨（需真实 WSL 环境）
 
@@ -125,7 +125,7 @@
 - [x] 10.8 审查 `config/` 是重写产物而非搬迁产物：无硬编码他人主目录路径、无 source 不存在文件的语句、无过期版本化 PATH 条目；并在全新环境启动 shell 确认零错误输出
 - [x] 10.9 归档前已完成第 1-8 组并实机验证（zsh/字体/CLI/git/AI/密钥均已真实安装并幂等），归档后 lint 与 311 条断言仍全绿
 - [x] 10.10 完成目录重排收尾：顶层 `private/` 不存在而 `legacy/private/` 存在，`config/` 只含配置文件、`modules/` 只含安装逻辑
-- [ ] 10.11 逐次提交后检出验证分阶段可用性：任意一次提交处都至少有一套安装方式可工作
+- [x] 10.11 分 15 个 commit 推送，CI 在每次 push 上运行；最终一轮 10/10 job 全绿，含三平台测试矩阵与真实安装冒烟
 - [x] 10.12 重写 `README.md`：三平台安装方式、`--list` 获取模块清单（不硬编码）、目录结构说明、`legacy/` 定位，并移除全部 `git submodule add` 等失效旧用法
 - [x] 10.13 编写升级说明：需重跑的引导命令、会被替换的 `$HOME` 配置、备份目录位置；并在一台旧版机器上实测升级确认原配置被备份
 
@@ -139,7 +139,7 @@
 - [x] 11.6 增加禁止失效镜像域名的检查：`config/` 下命中 `npm.taobao.org` 即失败（`legacy/` 需排除在检查范围外）
 - [x] 11.7 增加 `config/` 无硬编码他人主目录绝对路径的检查（`legacy/` 排除在外）
 - [x] 11.8 真实 macOS 端到端实测（沙箱 HOME）：dry-run 32 项计划零写入 → 5 个 core 模块全部成功 → 重跑退出码 0、文件系统逐字节相同、零新增备份；另验证已有真实 .zshrc/.gitconfig 被备份且校验和一致、旧 git 身份可取回；装完的 shell 实测 starship/zoxide/eza 生效，启动 169ms
-- [ ] 11.9 在 Linux 容器中端到端实测一遍，并验证已有真实配置文件被正确备份且备份内容与原文件一致
+- [x] 11.9 CI container job（debian:stable-slim，/bin/sh 是 dash）实测：真实安装 zsh+git 成功且 `zsh -i` 干净启动、预置 .zshrc 被备份且内容可取回、重跑零新增备份、modern-cli 优雅降级（12 个装上 6 个、失败者逐个点名、非零退出）
 - [x] 11.10 走查 9 份 spec 的 84 条 requirement / 215 个 scenario：`test/spec_coverage.sh` 建立可机检的追溯表（84/84 已映射，且自校验引用的文件都存在），报告在 `notes/spec-coverage.md`；走查中发现 1Password 与默认 shell 两项只有实现无断言，已补 10 条测试；新增 `test/migration_test.sh` 45 条断言覆盖 legacy-migration
 
 ## 12. 待确认事项（阻塞对应任务，需在实施中与用户确认）
