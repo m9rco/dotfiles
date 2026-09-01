@@ -132,8 +132,11 @@ function Get-DotModules {
                     $metaValue = $DotModule
                 }
 
-                $hasInstall = [bool](Get-Command -Name 'Install-DotModule' `
-                        -CommandType Function -ErrorAction SilentlyContinue)
+                # 不用反引号续行 —— 它在嵌套 scriptblock 里对解析器很敏感，
+                # PowerShell 7.6 会报 MissingEndCurlyBrace 且错误位置指向整个
+                # 函数（与真正出问题的行相差 40 行）。拆成两句最稳。
+                $installCmd = Get-Command -Name 'Install-DotModule' -CommandType Function -ErrorAction SilentlyContinue
+                $hasInstall = [bool]$installCmd
 
                 [pscustomobject]@{
                     Meta       = $metaValue

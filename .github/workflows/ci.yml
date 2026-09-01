@@ -363,10 +363,43 @@ jobs:
       - name: Test suites pass under dash
         run: sh test/run_all.sh
 
-      - name: Real install of the core modules
+      - name: Real install of the essential modules
         run: |
-          # 容器里是 root 且无图形环境：字体模块应被跳过，其余应真正安装
-          ./bootstrap.sh --tag core
+          # 这个 job 要证明的是「引导在最小环境里能跑通」，不是
+          # 「每个工具都能装上」。debian stable 的仓库里没有 eza / delta /
+          # lazygit / gh / yq / starship，而容器里也没有 cargo 做回退 ——
+          # 那 6 个装不上是环境的真实约束，不是缺陷。
+          #
+          # 所以只对不依赖第三方仓库的模块断言成功：zsh 与 git。
+          # modern-cli 的部分失败单独验证（下一步）。
+          ./bootstrap.sh --only zsh,git
+
+      - name: modern-cli degrades gracefully
+        run: |
+          # 装不上的工具必须被逐个点名、其余照常装上、模块以非零退出。
+          # 这三点合起来才叫「优雅降级」——只报一句「失败」是不够的。
+          set +e
+          out=$(./bootstrap.sh --only modern-cli 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+
+          # 至少要装上一部分（debian 仓库里有 ripgrep/fd/bat/fzf/zoxide/jq）
+          echo "$out" | grep -q 'installed/present: [1-9]' || {
+            echo 'expected at least one tool to install'
+            exit 1
+          }
+          # 失败的工具必须被点名
+          echo "$out" | grep -q 'could not install:' || {
+            echo 'expected the unavailable tools to be named'
+            exit 1
+          }
+          # 有失败就必须非零退出
+          if [ "$rc" = 0 ]; then
+            echo 'partial failure must exit non-zero'
+            exit 1
+          fi
+          echo "modern-cli degraded gracefully (exit $rc)"
 
       - name: Installed state is correct
         run: |
@@ -380,7 +413,7 @@ jobs:
         run: |
           # 记录首次安装后的备份目录数量
           before=$(find "$HOME/.dotfiles-backup" -maxdepth 1 -type d 2>/dev/null | wc -l)
-          ./bootstrap.sh --tag core
+          ./bootstrap.sh --only zsh,git
           after=$(find "$HOME/.dotfiles-backup" -maxdepth 1 -type d 2>/dev/null | wc -l)
           if [ "$before" != "$after" ]; then
             echo "second run created a new backup dir ($before -> $after); not idempotent"

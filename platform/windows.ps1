@@ -116,9 +116,14 @@ function Install-DotPackage {
         $pkg = Get-DotPackageName -Logical $Logical -Manager 'winget'
         if ($pkg) {
             Write-DotInfo "installing $Logical via winget ($pkg)"
-            # --accept-*-agreements 避免卡在交互式条款确认上
-            & winget install --id $pkg --exact --silent `
-                --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            # --accept-*-agreements 避免卡在交互式条款确认上。
+            # 参数放数组里而不是用反引号续行 —— 后者对解析器敏感
+            # （见 test/lint_ps.sh 的 fragile constructs 检查）。
+            $wingetArgs = @(
+                'install', '--id', $pkg, '--exact', '--silent',
+                '--accept-package-agreements', '--accept-source-agreements'
+            )
+            & winget @wingetArgs 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-DotSuccess "installed $Logical via winget"
                 return $true
@@ -194,8 +199,14 @@ function Register-DotFont {
         }
         # 值名要带字体类型后缀，值是字体文件的完整路径
         $valueName = "$FaceName (TrueType)"
-        New-ItemProperty -Path $regPath -Name $valueName -Value $Path `
-            -PropertyType String -Force | Out-Null
+        $regArgs = @{
+            Path         = $regPath
+            Name         = $valueName
+            Value        = $Path
+            PropertyType = 'String'
+            Force        = $true
+        }
+        New-ItemProperty @regArgs | Out-Null
         return $true
     }
     catch {

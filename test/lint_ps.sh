@@ -58,6 +58,37 @@ for f in bootstrap.ps1 lib/windows.ps1 platform/windows.ps1 \
     fi
 done
 
+# ---------------------------------------------------------------- 脆弱写法
+#
+# 本机的 PowerShell 版本可能比 CI runner 旧，有些写法在本机解析通过、
+# 在新版被拒（实测两次：内联 if 进 hashtable 字面量、嵌套 scriptblock 里的
+# 反引号续行，都报 MissingEndCurlyBrace 且错误位置指向整个函数）。
+# 与其每次靠 CI 发现，不如直接禁掉这些写法。
+
+printf '\n== fragile constructs ==\n'
+
+_frag=0
+
+# 反引号续行：对解析器敏感，且行尾多一个空格就静默失效
+if grep -nE '`$' bootstrap.ps1 lib/*.ps1 platform/*.ps1 modules/*/module.ps1 \
+    config/powershell/*.ps1 2>/dev/null; then
+    printf 'FAILED: backtick line continuation found — split into separate statements\n'
+    _frag=1
+fi
+
+# if/else 表达式内联进 hashtable 字面量
+if grep -nE '^\s+[A-Za-z_]+\s*=\s*if \(' bootstrap.ps1 lib/*.ps1 platform/*.ps1 \
+    modules/*/module.ps1 config/powershell/*.ps1 2>/dev/null; then
+    printf 'FAILED: inline if/else inside a hashtable literal — assign before the literal\n'
+    _frag=1
+fi
+
+if [ "$_frag" = 0 ]; then
+    printf 'no fragile constructs\n'
+else
+    _rc=1
+fi
+
 # ---------------------------------------------------------------- 可执行性
 #
 # ParseFile 只做语法解析，能通过不代表能运行 —— 实测有一处内联 if 写进
