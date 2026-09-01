@@ -3,9 +3,15 @@
 #
 # 设计取向：单行、信息按需出现、慢命令才显示耗时。
 # 需要图标正常显示的前提是终端字体为 Nerd Font（见 modules/fonts）。
+#
+# prompt 的观感沿用旧配置里那个被改过的 omz 主题
+# （legacy/private/zshrc/robbyrussell.zsh-theme）：🤥 用户名 🍭 时间 ➜。
+# 那份主题只能给 zsh 用，这里用 starship 重建同样的外观，PowerShell 侧
+# 因此也能拿到一致的 prompt。
 
 format = """
 $username\
+$time\
 $hostname\
 $directory\
 $git_branch\
@@ -28,9 +34,10 @@ min_time = 2000
 format = "[$duration]($style) "
 style = "yellow"
 
+# 旧主题用 ➜ 的颜色区分上一条命令成功与否，这里保留这个约定
 [character]
-success_symbol = "[❯](bold green)"
-error_symbol = "[❯](bold red)"
+success_symbol = "[➜](bold green)"
+error_symbol = "[➜](bold red)"
 vimcmd_symbol = "[❮](bold green)"
 
 [directory]
@@ -58,17 +65,27 @@ staged = "+${count}"
 renamed = "»${count}"
 deleted = "✘${count}"
 
-# 只在 SSH 会话里显示用户名与主机名 —— 本地机器上这两项是恒定的噪音。
-# 旧配置无条件把 (whoami) 塞进 PROMPT，占了一整段宽度。
+# 用户名无条件显示，🤥 前缀 —— 旧主题就是这么排的，是刻意保留的个人风格
+# 而非信息需要。主机名仍然只在 SSH 下出现：本地机器上它是恒定的，
+# 而用户名前缀已经占住了行首的视觉位置。
 [username]
-show_always = false
-style_user = "bold yellow"
-format = "[$user]($style)@"
+show_always = true
+style_user = "bold cyan"
+style_root = "bold red"
+format = "[🤥 $user]($style) "
 
 [hostname]
 ssh_only = true
 style = "bold green"
 format = "[$hostname]($style) "
+
+# 旧主题在用户名后面跟一个 🍭 和当前时间。starship 默认禁用 time 模块，
+# 这里显式打开。%T 是 24 小时制的 HH:MM:SS，与旧主题的 %T 对齐。
+[time]
+disabled = false
+time_format = "%T"
+style = "bold yellow"
+format = "[🍭 $time]($style) "
 
 # 语言版本只在对应项目里出现
 [nodejs]

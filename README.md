@@ -61,19 +61,28 @@ Windows 上两种方式都可以：原生 PowerShell 走 `bootstrap.ps1`（scoop
 
 | 标签 | 内容 |
 |---|---|
-| `shell` | zsh + 分片配置、starship prompt、补全缓存、惰性加载 |
+| `shell` | zsh + 分片配置、oh-my-zsh 与插件、starship prompt、补全缓存、惰性加载 |
 | `fonts` | JetBrainsMono Nerd Font、Maple Mono NF（中英等宽） |
-| `cli` | ripgrep、fd、bat、eza、fzf、zoxide、delta、jq、yq、gh、lazygit、starship |
+| `cli` | ripgrep、fd、bat、eza、fzf、zoxide、delta、jq、yq、gh、lazygit、starship、direnv、tmux |
 | `git` | gitconfig、全局 gitignore、delta 集成 |
 | `ai` | Claude Code / Codex CLI / Gemini CLI、MCP 与 agent/skill 配置 |
 | `secrets` | 密钥库接入、gitleaks pre-commit 守卫 |
 
-可选项默认不装，需要时显式启用：
+prompt 由 starship 渲染，配置是单一的 `config/starship.toml` —— zsh 与
+PowerShell 共用同一份，所以三个平台的 prompt 长得一样。
+
+可选项默认不装，需要时显式启用。两种写法等价：
 
 ```sh
-DOT_WANT_ATUIN=1 ./bootstrap.sh --only modern-cli   # atuin 会接管 Ctrl-R
-DOT_WANT_OLLAMA=1 ./bootstrap.sh --only secrets     # 本地推理，体积大
+DOT_WANT_ATUIN=1 ./bootstrap.sh --only modern-cli        # atuin 会接管 Ctrl-R
+DOT_CLI_OPTIONAL="btop dust duf procs" ./bootstrap.sh --only modern-cli
+DOT_WANT_OLLAMA=1 ./bootstrap.sh --only secrets          # 本地推理，体积大
 ```
+
+可选的 CLI 工具：`htop` `btop`（进程/资源监控）、`dust` `duf`（磁盘占用）、
+`procs`（ps 替代）、`tldr`（命令速查）、`hyperfine`（基准测试）、
+`xh`（HTTP 客户端）、`sd`（sed 替代）、`atuin`（历史加强版）。
+完整清单见 `config/cli/tools.txt`。
 
 ## 目录结构
 

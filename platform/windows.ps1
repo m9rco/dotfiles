@@ -40,7 +40,20 @@ function Get-DotPackageName {
         'git'      = 'git'
         'gitleaks' = 'gitleaks'
         'ollama'   = 'ollama'
+        'btop'     = 'btop'
+        'dust'     = 'dust'
+        'duf'      = 'duf'
+        'procs'    = 'procs'
+        'hyperfine' = 'hyperfine'
+        'xh'       = 'xh'
+        'sd'       = 'sd'
+        'tldr'     = 'tealdeer'   # scoop 收的是 Rust 实现，命令仍是 tldr
         'zsh'      = $null   # Windows 原生没有 zsh —— 那是 WSL 的事
+        # tmux 与 htop 是 Unix 终端/进程模型上的东西，Windows 原生没有对应物
+        # （清单里它们标的是 "macos linux"，走不到这里；列出来是为了让
+        # 「刻意不支持」和「忘了加」可区分）。
+        'tmux'     = $null
+        'htop'     = $null
     }
 
     # winget 用的是完整的包 ID
@@ -59,7 +72,13 @@ function Get-DotPackageName {
         'lazygit'          = 'JesseDuffield.lazygit'
         'gitleaks'         = 'gitleaks.gitleaks'
         'ollama'           = 'Ollama.Ollama'
+        'hyperfine'        = 'sharkdp.hyperfine'
+        'xh'               = 'ducaale.xh'
+        # 只列 winget 里确有的 ID。btop/dust/duf/procs/sd/tldr 走 scoop ——
+        # 乱猜一个 ID 会让 winget 报 "no package found"，那比直接跳过更难排查。
         'zsh'              = $null
+        'tmux'             = $null
+        'htop'             = $null
     }
 
     switch ($Manager) {

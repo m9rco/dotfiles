@@ -69,6 +69,7 @@ shell-environment|本地覆盖不入库|config/zsh/zshrc.d/90-local.zsh|lint:no-
 shell-environment|Homebrew 环境正确加载|config/zsh/zshrc.d/10-path.zsh|manual:Apple Silicon 上 HOMEBREW_PREFIX=/opt/homebrew
 shell-environment|失效镜像地址移除|config/zsh/zshrc.d/00-env.zsh|lint:no-dead-mirror
 shell-environment|单一 zsh 框架|config/zsh|manual:config 下无 zimrc
+shell-environment|oh-my-zsh 框架与插件的安装|modules/omz|test:omz_test.sh
 shell-environment|条件化插件加载|config/zsh/zshrc.d/20-omz.zsh|manual:缺工具时启动零错误输出
 shell-environment|starship 作为跨平台 prompt|config/starship.toml|manual:zsh 与 PowerShell 共用同一份
 shell-environment|历史记录配置|config/zsh/zshrc.d/15-history.zsh|manual:HISTSIZE/SAVEHIST 实测 50000

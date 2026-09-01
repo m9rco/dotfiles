@@ -278,9 +278,18 @@ expect 'every real entry has platforms, a valid tag and a description' '' "$bad"
 atuin_tag=$(grep '^atuin|' "$REAL" | cut -d'|' -f3)
 expect 'atuin stays optional' 'optional' "$atuin_tag"
 
-# 默认集应该正好是设计里确定的 12 个
+# 默认集应该正好是设计里确定的 14 个：12 个现代 CLI 工具，加上
+# direnv 与 tmux —— 这两个是 zshrc.d 的片段已经引用的，不装它们
+# 对应功能会静默失效。改这个数字前请确认新增的确实该默认装。
 default_count=$(grep -vE '^\s*#|^\s*$' "$REAL" | cut -d'|' -f3 | grep -c '^default$')
-expect 'the default set has 12 tools' '12' "$(printf '%s' "$default_count" | tr -d ' ')"
+expect 'the default set has 14 tools' '14' "$(printf '%s' "$default_count" | tr -d ' ')"
+
+# 配置片段引用了却没人安装的工具是最难发现的一类问题 —— 装不上会报错，
+# 而「压根没进清单」只是功能静默消失。这里把两处钉在一起。
+for referenced in direnv tmux; do
+    ok_if "$referenced is in the manifest (referenced by zshrc.d)" \
+        "grep -q '^$referenced|' '$REAL'"
+done
 
 # ------------------------------------------------------------------ git 模块
 

@@ -95,6 +95,31 @@ zsh 配置 MUST NOT 包含已下线的镜像域名（含 `npm.taobao.org` 系列
 - **WHEN** 检查 `config/` 目录
 - **THEN** 不存在 `zimrc` 或任何 zim 框架配置文件
 
+### Requirement: oh-my-zsh 框架与插件的安装
+
+系统 SHALL 安装 oh-my-zsh 框架本体与配置片段所引用的自定义插件。插件目录名 MUST 与 `20-omz.zsh` 的探测路径一致。安装 MUST 幂等，MUST NOT 覆盖或删除目标位置已有的用户内容；单个插件安装失败 MUST NOT 中断其余插件。
+
+「条件化插件加载」只规定了配置侧按存在性加载，未规定谁负责让它们存在 —— 结果是片段在新机器上整段空转：`$ZSH/oh-my-zsh.sh` 不存在时它直接 return，插件列表里的 `zsh-autosuggestions` 等永远不生效，且没有任何报错。本 requirement 补上安装侧。
+
+#### Scenario: 新机器上框架与插件都被装上
+
+- **WHEN** 在未装过 oh-my-zsh 的机器上运行引导
+- **THEN** `$ZSH/oh-my-zsh.sh` 就位
+- **AND** `zsh-autosuggestions`、`zsh-syntax-highlighting`、`zsh-history-substring-search` 各自的 `*.plugin.zsh` 就位
+- **AND** 下次 shell 启动时 `20-omz.zsh` 的插件列表包含这三者
+
+#### Scenario: 重复运行不重复安装
+
+- **WHEN** 在已装好的机器上再次运行引导
+- **THEN** 框架与插件都报告为已存在
+- **AND** 不产生任何网络请求
+
+#### Scenario: 目标位置已有用户内容时拒绝写入
+
+- **WHEN** `$ZSH` 目录非空但没有 `oh-my-zsh.sh`
+- **THEN** 模块报错并说明原因
+- **AND** 目录中原有文件保持不变
+
 ### Requirement: 条件化插件加载
 
 系统 SHALL 按对应命令是否存在来决定加载哪些 zsh 插件，缺失的工具 MUST NOT 导致启动错误或错误输出。插件条件判断 MUST 位于专门的片段中，MUST NOT 散落在入口文件。

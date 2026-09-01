@@ -24,6 +24,9 @@ dot_platform_pkg_name() {
         delta) printf 'git-delta' ;;
         yq) printf 'yq' ;;
         gh) printf 'gh' ;;
+        # brew 里没有 tldr 这个 formula。tlrc 是 tldr 客户端的官方 Rust
+        # 实现，装出来的命令就叫 tldr。
+        tldr) printf 'tlrc' ;;
         # 其余逻辑名与 brew 包名一致
         *) printf '%s' "$1" ;;
     esac

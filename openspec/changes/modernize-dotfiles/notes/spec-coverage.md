@@ -2,7 +2,7 @@
 
 生成命令：`sh test/spec_coverage.sh`
 
-requirement 总数：84
+requirement 总数：85
 
 ## ai-agent-config
 
@@ -133,7 +133,7 @@ requirement 总数：84
 
 ## shell-environment
 
-13 条 requirement / 31 个 scenario
+14 条 requirement / 34 个 scenario
 
 | Requirement | 实现 | 验证 |
 |---|---|---|
@@ -143,6 +143,7 @@ requirement 总数：84
 | Homebrew 环境正确加载 | `config/zsh/zshrc.d/10-path.zsh` | manual:Apple Silicon 上 HOMEBREW_PREFIX=/opt/homebrew |
 | 失效镜像地址移除 | `config/zsh/zshrc.d/00-env.zsh` | lint:no-dead-mirror |
 | 单一 zsh 框架 | `config/zsh` | manual:config 下无 zimrc |
+| oh-my-zsh 框架与插件的安装 | `modules/omz` | test:omz_test.sh |
 | 条件化插件加载 | `config/zsh/zshrc.d/20-omz.zsh` | manual:缺工具时启动零错误输出 |
 | starship 作为跨平台 prompt | `config/starship.toml` | manual:zsh 与 PowerShell 共用同一份 |
 | 历史记录配置 | `config/zsh/zshrc.d/15-history.zsh` | manual:HISTSIZE/SAVEHIST 实测 50000 |
@@ -152,6 +153,6 @@ requirement 总数：84
 | 跨 shell 共享配置 | `config/starship.toml` | manual:两侧读同一文件 |
 
 
-covered: 84 / 84
+covered: 85 / 85
 every requirement maps to an implementation and a verification method
 all referenced tests and implementation paths exist

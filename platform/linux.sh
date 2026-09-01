@@ -95,6 +95,36 @@ dot_platform_pkg_name() {
                 *) printf '' ;;
             esac
             ;;
+        # dust / procs / xh / sd / tldr 都是较新的 Rust 工具，主流发行版
+        # 仓库多半没收录。返回空串走 cargo 回退比赌包名更可靠 ——
+        # 赌错的后果是 apt 报 "no installable candidate"，而回退链本来就能装成。
+        dust | procs | xh | sd)
+            case $DOT_PKG in
+                pacman | apk) printf '%s' "$_dot_logical" ;;
+                *) printf '' ;;
+            esac
+            ;;
+        tldr)
+            case $DOT_PKG in
+                # Arch/Alpine 收了 Rust 实现 tealdeer，装出来的命令是 tldr
+                pacman | apk) printf 'tealdeer' ;;
+                *) printf '' ;;
+            esac
+            ;;
+        duf)
+            case $DOT_PKG in
+                apt | dnf | pacman | apk) printf 'duf' ;;
+                *) printf '' ;;
+            esac
+            ;;
+        hyperfine)
+            case $DOT_PKG in
+                pacman | apk) printf 'hyperfine' ;;
+                *) printf '' ;;
+            esac
+            ;;
+        # btop / htop / direnv / tmux 在各发行版仓库里都同名且都收录了
+        btop | htop | direnv | tmux) printf '%s' "$_dot_logical" ;;
         fzf | jq | git | zsh | curl | unzip) printf '%s' "$_dot_logical" ;;
         *) printf '%s' "$_dot_logical" ;;
     esac

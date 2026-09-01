@@ -62,6 +62,9 @@ dot_pkg_commands_for() {
         delta) printf 'delta' ;;
         yq) printf 'yq' ;;
         github-cli) printf 'gh' ;;
+        # tldr 有多个实现（tlrc / tealdeer / 老的 Node 客户端），装出来的
+        # 命令都叫 tldr；tealdeer 早期版本还会留一个 tldrl。
+        tldr) printf 'tldr tealdeer' ;;
         *) printf '%s' "$1" ;;
     esac
 }

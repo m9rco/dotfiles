@@ -37,10 +37,38 @@ yq|all|default||jq 之于 JSON，yq 之于 YAML/TOML/XML
 
 starship|all|default|cargo:starship|跨 shell 的 prompt，zsh 与 PowerShell 共用 config/starship.toml
 
+# ---------------------------------------------------------------- shell 环境
+#
+# 这两个是「配置里已经引用、却没人安装」的补齐项 —— 缺了它们不报错，
+# 只是对应功能静默失效，属于比装不上更难发现的问题。
+
+direnv|macos linux|default||进目录自动加载 .envrc，30-tools.zsh 已挂好 hook
+tmux|macos linux|default||终端复用；20-omz.zsh 的 tmux 插件按它是否存在决定加载
+
 # ---------------------------------------------------------------- 可选
 #
-# atuin 会接管 Ctrl-R 并把历史存进自己的 SQLite 库 —— 这是对 shell 历史
-# 行为的实质改变（好处是跨机器同步与更强的检索），因此不默认安装。
-# 用 ./bootstrap.sh --only modern-cli-optional 或显式设 DOT_WANT_ATUIN=1 启用。
+# 下面都是「顺手好用但不是每台机器都需要」的工具。默认不装的两个理由：
+# 引导要快，且其中多数在 apt/dnf 仓库里没有、回退到 cargo 要现场编译。
+#
+# 启用方式（两者等价）：
+#   DOT_CLI_OPTIONAL="btop dust" ./bootstrap.sh --only modern-cli
+#   DOT_WANT_BTOP=1 ./bootstrap.sh --only modern-cli
+#
+# atuin 单独说明：它会接管 Ctrl-R 并把历史存进自己的 SQLite 库 —— 这是对
+# shell 历史行为的实质改变（好处是跨机器同步与更强的检索），所以即便
+# 你想装全套，也该是一次明确的选择。
 
 atuin|all|optional|cargo:atuin|shell 历史的加强版：SQLite 存储、跨机同步、模糊检索
+
+# 系统监控
+htop|macos linux|optional||交互式进程监控，top 的可用版
+btop|all|optional||htop 的现代版：CPU/内存/网络都有图形化面板
+dust|all|optional|cargo:du-dust|du 的替代：树状展示各目录占用，一眼看出谁在吃盘
+duf|all|optional||df 的替代：彩色表格，自动区分真实设备与虚拟挂载
+procs|all|optional|cargo:procs|ps 的替代：彩色输出、支持树视图与按端口查进程
+
+# 开发常用
+tldr|all|optional|cargo:tealdeer|命令速查：man 太长时看几个真实示例
+hyperfine|all|optional|cargo:hyperfine|命令基准测试：多次采样 + 统计，bin/dot-bench 可用它
+xh|all|optional|cargo:xh|HTTP 客户端：httpie 的用法，Rust 的启动速度
+sd|all|optional|cargo:sd|sed 的替代：正则与替换语法直观，不用背转义规则
