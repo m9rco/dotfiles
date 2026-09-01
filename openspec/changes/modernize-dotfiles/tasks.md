@@ -145,6 +145,23 @@
 ## 12. 待确认事项（阻塞对应任务，需在实施中与用户确认）
 
 - [x] 12.1 已确认：全部搬入仓库（含工具自装的 codebase-memory skill 与 cbm-* hooks）；工具升级覆写风险记录在 `config/ai/README.md`
-- [x] 12.2 按 design 既定实现：12 个默认 + atuin 可选（`DOT_WANT_ATUIN=1` 或 `DOT_CLI_OPTIONAL=atuin` 启用）。如需调整清单只改 `config/cli/tools.txt`
+- [x] 12.2 按 design 既定实现：12 个默认 + atuin 可选（`DOT_WANT_ATUIN=1` 或 `DOT_CLI_OPTIONAL=atuin` 启用）。如需调整清单只改 `config/cli/tools.txt`。后续在第 13 组扩到 14 个默认 + 10 个可选
 - [ ] 12.3 确认 macOS `defaults` 系统偏好设置本次不纳入（design 中列为 Non-Goal），如需纳入则另开 change
 - [ ] 12.4 确认是否需要"多机器差异化"（工作机 vs 个人机装不同模块）；当前只有 `MODULE_TAGS` 粗粒度分组
+
+## 13. 主题迁移与安装侧补齐（第 1-12 组收尾后追加）
+
+前 12 组把 zsh 配置侧建完了，但漏了两处「配置引用了、却没人负责让它存在」的
+缺口，以及一处被归档后没迁回来的个人配置。三者的共同特征是**不报错**——
+功能静默消失，比装不上更难发现。
+
+- [x] 13.1 把旧 omz 主题（`legacy/private/zshrc/robbyrussell.zsh-theme`，已被改过：🤥 用户名 🍭 时间 ➜）用 starship 重建到 `config/starship.toml`；不搬主题文件本身，因为那样 PowerShell 侧拿不到一致 prompt（与 `shell-environment` 的「starship 作为跨平台 prompt」冲突）
+- [x] 13.2 编写 `modules/omz/module.sh`：装 oh-my-zsh 本体与 `20-omz.zsh` 引用的三个自定义插件。此前无任何模块负责，导致该片段在新机器上整段 `return`，插件永不生效且零报错
+- [x] 13.3 给 `shell-environment` spec 补「oh-my-zsh 框架与插件的安装」requirement —— 覆盖率此前 84/84 全绿正是因为这条需求不存在，缺的是需求本身而非实现
+- [x] 13.4 模块刻意不读 `$ZSH`，改用 `DOT_OMZ_DIR` 覆盖（同 `DOT_FONT_DIR` 的理由）：`$ZSH` 由交互式 shell 导出指向真实家目录，读它会让测试的 HOME 沙箱失效（开发中实际误写入过 `~/.oh-my-zsh`）
+- [x] 13.5 补齐被引用却缺失的工具：`direnv`（`30-tools.zsh` 已挂 hook）、`tmux`（`20-omz.zsh` 已引用插件）进默认集，默认集 12 → 14
+- [x] 13.6 扩充可选工具集：htop、btop、dust、duf、procs、tldr、hyperfine、xh、sd（共 10 个可选，含 atuin）。默认不装 —— 引导要快，且多数在 apt/dnf 仓库里没有、回退 cargo 需现场编译
+- [x] 13.7 在 `platform/` 三层补包名映射：`tldr` → brew `tlrc` / pacman·apk `tealdeer`；不确定的发行版一律返回空串走 cargo 回退，而不是赌包名；Windows 侧 `tmux`/`htop` 显式设 `$null` 以区分「刻意不支持」与「忘了加」
+- [x] 13.8 新增 `test/omz_test.sh`（41 条断言，替身 git + 沙箱 HOME，不真 clone）：覆盖幂等、dry-run 零写入、`$ZSH` 逃逸、clone 失败不留残骸、非空目录拒绝写入、缺 git 明确失败；并用变异测试确认「缺 git」用例在检查被移除时确实会失败
+- [x] 13.9 在 `test/cli_test.sh` 增加「片段引用的工具必须在清单里」的交叉断言，把 13.5 这类漂移钉死；默认集数量断言同步 12 → 14
+- [x] 13.10 验证：lint 全清、`run_all` 在 sh 与 dash 下 10 个套件全过、spec 覆盖 85/85、CI 10 个 job 全绿（含 Windows PowerShell 与 debian 容器真实安装，覆盖本机无法验证的 Linux/Windows 包名映射路径）

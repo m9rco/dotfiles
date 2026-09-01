@@ -13,8 +13,9 @@
 | `install.sh` | 旧的单体安装脚本，1200+ 行、~50 个 `install_*` 函数 | `bootstrap.sh` + `modules/*/` |
 | `zsh/` | oh-my-zsh 与 zim 两套并行配置 | `config/zsh/`（只保留 omz 一套） |
 | `zshrc/` | 更早的一份 zshrc，含硬编码他人主目录路径 | 同上 |
+| `zshrc/robbyrussell.zsh-theme` | 名字沿用 omz 主题但内容已被改过的自定义 prompt（🤥 用户名 🍭 时间 ➜） | 观感已用 starship 重建到 `config/starship.toml`（主题文件本身没搬 —— 那只能给 zsh 用，PowerShell 侧就拿不到一致 prompt） |
 | `git/` | 旧 gitconfig | `config/git/` |
-| `tmux/` | tmux 配置 | 未纳入新结构（按需另开 change） |
+| `tmux/` | tmux 配置 | 配置未纳入新结构（按需另开 change）；tmux 这个**工具**已进 `config/cli/tools.txt` 默认集 |
 | `vim/` | vimrc 与插件清单（插件本身是 gitlink，已移除） | 未纳入新结构 |
 | `vscode/`、`VScode.settings.json` | VS Code 设置 | 未纳入新结构 |
 | `sublime2/`、`sublime3/` | Sublime Text 2/3 设置 | 已弃用 |

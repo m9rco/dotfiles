@@ -23,6 +23,8 @@ cd ~/lab/dotfiles && git pull
 | 无预演 | `--dry-run` |
 | Source Code Pro | JetBrainsMono Nerd Font + Maple Mono NF |
 | omz 与 zim 两套并行 | 只保留 omz，prompt 换 starship |
+| 手写的 `robbyrussell.zsh-theme`（🤥 用户名 🍭 时间 ➜） | 同样的观感由 starship 渲染，zsh 与 PowerShell 共用 `config/starship.toml` |
+| omz 与插件靠手工 `git clone` | `modules/omz` 负责安装，幂等且不覆盖已有内容 |
 | 24 个 git submodule/gitlink | 全部移除，`git clone` 不再需要 `--recurse-submodules` |
 | Travis CI | GitHub Actions |
 
@@ -82,8 +84,14 @@ sh legacy/private/install.sh
 
 ## 已知的行为变化
 
-- **prompt 变了**：从 omz 主题换成 starship。配置在 `config/starship.toml`，
-  starship 未安装时会回退到 omz 主题。
+- **prompt 的渲染者变了，观感没变**：从 omz 主题换成 starship，但旧主题的
+  排版（🤥 用户名 🍭 时间 ➜）被保留了下来，配置在 `config/starship.toml`。
+  git 状态比旧主题更细：旧的只有一个 `✗` 表示脏，现在是 `!2 ?1` 这样的分项
+  计数。starship 未安装时回退到 omz 内置主题（`robbyrussell`），此时排版会
+  退回 omz 的样子。
+- **oh-my-zsh 与三个插件现在由引导安装**（`modules/omz`）。已经手工装过的
+  机器不受影响 —— 判定依据是 `oh-my-zsh.sh` 与各插件的 `*.plugin.zsh` 是否
+  存在，已存在则跳过，不会覆盖或更新你手上的副本。
 - **`ls` 变成 `eza`**（仅交互式 shell）。脚本里的 `ls` 不受影响。
 - **`cat` 没有被替换** —— bat 的别名是 `bcat`，避免破坏管道用法。
 - **历史文件位置**：`HISTFILE` 现在明确指向 `~/.zsh_history`。旧配置里
