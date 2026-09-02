@@ -516,7 +516,16 @@ jobs:
       image: rockylinux:9
     steps:
       - name: Install the bare minimum
-        run: dnf install -y -q git curl
+        run: |
+          # 只装缺的。不能无条件 `dnf install curl` —— x86_64 的 rockylinux:9
+          # 预装了 curl-minimal，而它与完整 curl 包冲突，dnf 会直接报
+          # "conflicts with curl provided by ..." 并退出。
+          # curl-minimal 已经提供 /usr/bin/curl，够用。
+          # （arm64 镜像层不同、没有这个冲突，所以本机测不出来。）
+          command -v curl >/dev/null || dnf install -y -q curl
+          command -v git >/dev/null || dnf install -y -q git
+          curl --version | head -1
+          git --version
 
       - uses: actions/checkout@v4
 
