@@ -15,9 +15,33 @@ fi
 # ---------------------------------------------------------------- 列目录
 
 if (( $+commands[eza] )); then
+  # 注意 --group-directories-first 与 --group 是两回事：前者是排序（目录排在
+  # 前面），后者才是「显示组名那一列」。eza 默认不显示组，而 ls -l 一直显示 ——
+  # 只看名字很容易以为前者已经覆盖了后者，于是长格式里静静少了一列。
+  #
+  # -h 让大小带单位，与旧配置的 ls -lh 对齐。
+  #
+  # 配色：eza 默认给权限位逐位上色（r 黄 w 红 x 绿）、大小与日期也各自上色，
+  # 一行里七八种颜色，扫一眼找文件名反而更慢。这里把元数据列压成素色，只让
+  # 文件名保留类型色（目录/可执行/软链接），接近 ls 的观感。
+  #
+  # 键名取自 eza 自己的 man eza_colors：
+  #   ur/uw/ux gr/gw/gx tr/tw/tx = 权限位的九个格子
+  #   sn/sb = 大小的数字与单位   da = 日期
+  #   uu/un/uR = 用户名列（你自己 / 别人 / root）
+  #   gu/gn/gR = 组名列（你所属的组 / 你不属于的组 / root 相关）
+  # 用户名与组名要把三种情形都列上：只设 uu/gu 的话，像 wheel 这种你不属于
+  # 的组会漏掉，一行里就剩它一个亮色，比全亮更扎眼。
+  # 值是 ANSI SGR 码，2 是 dim。
+  #
+  # 用 ${EZA_COLORS:-...} 而不是直接赋值：已经设过的（比如在 ~/.zshenv 或
+  # 上游 profile 里）保持原样。想整体换配色就在 ~/.zshrc.local 里重设，
+  # 那个文件由 90-local.zsh 最后加载，覆盖这里。
+  export EZA_COLORS="${EZA_COLORS:-ur=2:uw=2:ux=2:ue=2:gr=2:gw=2:gx=2:tr=2:tw=2:tx=2:sn=2:sb=2:da=2:uu=2:un=2:uR=2:gu=2:gn=2:gR=2}"
+
   alias ls='eza --group-directories-first'
-  alias ll='eza -l --group-directories-first --git'
-  alias la='eza -la --group-directories-first --git'
+  alias ll='eza -lh --group --group-directories-first --git'
+  alias la='eza -lah --group --group-directories-first --git'
   alias lt='eza --tree --level=2'
   alias tree='eza --tree'
 else

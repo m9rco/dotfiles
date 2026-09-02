@@ -99,10 +99,20 @@ if (Get-Command bat -CommandType Application -ErrorAction SilentlyContinue) {
 # 要用 Remove-Item alias: 才能覆盖。
 
 if (Get-Command eza -CommandType Application -ErrorAction SilentlyContinue) {
+    # 配色与列的选择跟 zsh 侧的 40-aliases.zsh 保持一致 —— 同一台机器上
+    # 两个 shell 的 ll 输出不该长得不一样。改一处记得改另一处。
+    #
+    # --group 是「显示组名列」，与 --group-directories-first（排序）不是
+    # 一回事。eza 默认不显示组，而 ls -l 一直显示。
+    # EZA_COLORS 把元数据列压成 dim，只留文件名的类型色；键名见 man eza_colors。
+    if (-not $env:EZA_COLORS) {
+        $env:EZA_COLORS = 'ur=2:uw=2:ux=2:ue=2:gr=2:gw=2:gx=2:tr=2:tw=2:tx=2:sn=2:sb=2:da=2:uu=2:un=2:uR=2:gu=2:gn=2:gR=2'
+    }
+
     Remove-Item alias:ls -Force -ErrorAction SilentlyContinue
     function ls { eza --group-directories-first @args }
-    function ll { eza -l --group-directories-first --git @args }
-    function la { eza -la --group-directories-first --git @args }
+    function ll { eza -lh --group --group-directories-first --git @args }
+    function la { eza -lah --group --group-directories-first --git @args }
     function lt { eza --tree --level=2 @args }
 }
 
