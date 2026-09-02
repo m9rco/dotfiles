@@ -146,8 +146,8 @@
 
 - [x] 12.1 已确认：全部搬入仓库（含工具自装的 codebase-memory skill 与 cbm-* hooks）；工具升级覆写风险记录在 `config/ai/README.md`
 - [x] 12.2 按 design 既定实现：12 个默认 + atuin 可选（`DOT_WANT_ATUIN=1` 或 `DOT_CLI_OPTIONAL=atuin` 启用）。如需调整清单只改 `config/cli/tools.txt`。后续在第 13 组扩到 14 个默认 + 10 个可选
-- [ ] 12.3 确认 macOS `defaults` 系统偏好设置本次不纳入（design 中列为 Non-Goal），如需纳入则另开 change
-- [ ] 12.4 确认是否需要"多机器差异化"（工作机 vs 个人机装不同模块）；当前只有 `MODULE_TAGS` 粗粒度分组
+- [x] 12.3 已确认：macOS `defaults` 系统偏好设置**不纳入**本次 change，维持 design 里的 Non-Goal。理由是它与本 change 的其余部分性质不同 —— 引导装的是「缺了就不能用」的工具与配置，而 `defaults` 调的是个人手感偏好，改错了要靠记忆逐条还原（没有 `~/.dotfiles-backup/` 那样的兜底）。如需纳入则另开 change，届时要先解决「如何备份与回滚原有 defaults 值」
+- [x] 12.4 已确认：**不加** profile 机制，现有粒度够用。`--tag` / `--only` / `--skip` 三个筛选维度加上不入库的 `~/.zshrc.local`、`env.local` 覆盖，已能表达工作机与个人机的差异；再加一层 `config/profiles/*.txt` 只是把同样的筛选换个地方声明，多一处真源要维护。若将来机器数量增长到手写 `--skip` 清单开始出错，再回头加
 
 ## 13. 主题迁移与安装侧补齐（第 1-12 组收尾后追加）
 

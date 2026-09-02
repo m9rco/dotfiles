@@ -203,7 +203,21 @@ config/ai/
 
 ## Open Questions
 
-- 现代 CLI 工具链的具体成员是否需要收敛？（当前列了 12 个，其中 atuin 会改变 history 行为、需要确认是否想要）
-- `config/ai/` 的 agents/skills 真源与已存在的 `~/.claude/` 现有内容如何合并 —— 是把现有内容搬进仓库，还是从空开始？
-- macOS `defaults` 系统偏好设置是否要纳入本次 change，还是留作独立 change？（design 里暂列为 Non-Goal）
-- 是否需要支持"多机器差异化"（工作机 vs 个人机装不同模块）？当前设计只有 `MODULE_TAGS` 粗粒度分组。
+四条已全部关闭，答案与理由如下（对应 `tasks.md` 第 12 组）：
+
+- ~~现代 CLI 工具链的具体成员是否需要收敛？~~ **已定**：默认集 14 个 + 可选集
+  10 个（含 atuin）。atuin 会改变 history 行为，因此默认不装，靠
+  `DOT_WANT_ATUIN=1` 显式启用。改清单只动 `config/cli/tools.txt`。
+- ~~`config/ai/` 的真源与现有 `~/.claude/` 如何合并？~~ **已定**：把现有内容
+  整体搬进仓库（18 个 council agent、2 个 skill、2 个 hook、settings.json），
+  而不是从空开始 —— 从空开始等于丢掉已经在用的配置。工具自装的部分会被上游
+  升级覆写，风险与应对写在 `config/ai/README.md`。
+- ~~macOS `defaults` 是否纳入本次 change？~~ **不纳入**，维持 Non-Goal。它与
+  本 change 其余部分性质不同：引导装的是「缺了就不能用」的工具与配置，而
+  `defaults` 调的是个人手感偏好。更关键的是它没有等价兜底 —— 文件有
+  `~/.dotfiles-backup/`，`defaults` 改错了只能靠记忆逐条还原。要纳入就得先
+  设计 defaults 的备份与回滚，那是独立 change 的体量。
+- ~~是否需要多机器差异化？~~ **不加**。`--tag` / `--only` / `--skip` 三个筛选
+  维度加上不入库的 `~/.zshrc.local`、`env.local` 覆盖，已能表达工作机与个人机
+  的差异；再加一层 `config/profiles/*.txt` 只是把同样的筛选换个地方声明，
+  多一处真源要维护。等到机器多到手写 `--skip` 清单开始出错，再回头加。
