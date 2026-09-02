@@ -179,7 +179,16 @@ _dot_pkg_try_script() {
         # 不导出的话紧随其后的 dot_pkg_installed 判定会失败。
         case ":$PATH:" in
             *":$_dot_script_bin:"*) ;;
-            *) PATH="$_dot_script_bin:$PATH" && export PATH ;;
+            *)
+                PATH="$_dot_script_bin:$PATH"
+                export PATH
+                # 记下来，引导结束时统一提示 —— 导出只影响引导进程自身，
+                # 用户当前的 shell 仍然找不到这个工具，直到重开终端。
+                # zsh 配置里有 ~/.local/bin，所以新 shell 没问题；
+                # 但不说清楚的话，用户会以为「装了却没装上」。
+                DOT_PKG_PATH_NOTICE=$_dot_script_bin
+                export DOT_PKG_PATH_NOTICE
+                ;;
         esac
         return 0
     fi

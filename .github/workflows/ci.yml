@@ -425,9 +425,19 @@ jobs:
             echo 'if an essential tool genuinely failed, the output above names it'
             exit 1
           fi
-          # starship 是 essential，必须真的装上了（走官方脚本）
-          command -v starship >/dev/null || {
+          # starship 是 essential，必须真的装上了（走官方脚本）。
+          #
+          # 不能用 command -v 判断：官方脚本装到 ~/.local/bin，而引导进程
+          # 对 PATH 的修改不会传给 CI 的下一条命令（那是新 shell）。
+          # 用户侧不是问题 —— 10-path.zsh 里有 ~/.local/bin，新 shell 能找到；
+          # 引导也会提示需要重开终端。这里直接查文件在不在。
+          if ! command -v starship >/dev/null && [ ! -x "$HOME/.local/bin/starship" ]; then
             echo 'starship is essential and should have installed via its official script'
+            exit 1
+          fi
+          # 装完必须提示 PATH 的事 —— 否则用户会以为装失败了
+          echo "$out" | grep -q 'open a new shell' || {
+            echo 'expected a notice that new tools need a fresh shell for PATH'
             exit 1
           }
           echo "modern-cli degraded gracefully (exit $rc, starship present)"

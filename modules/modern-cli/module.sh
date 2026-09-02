@@ -95,6 +95,13 @@ EOF
 
     dot_info "installed/present: $_dot_cli_ok · skipped: $_dot_cli_skipped"
 
+    # 有工具装到了当前 PATH 之外的目录 —— 说清楚，否则用户在当前 shell 里
+    # 找不到它会以为装失败了。新 shell 没问题（10-path.zsh 有 ~/.local/bin）。
+    if [ -n "${DOT_PKG_PATH_NOTICE:-}" ]; then
+        dot_tip "some tools were installed to $DOT_PKG_PATH_NOTICE"
+        dot_tip '  open a new shell (or source your zshrc) for them to appear on PATH'
+    fi
+
     _dot_cli_stale_check
 
     # 装不上的工具分两类看待。

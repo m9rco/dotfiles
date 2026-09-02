@@ -629,6 +629,44 @@ case $starship_fb in
         ;;
 esac
 
+printf '\n== tools installed outside PATH are called out ==\n'
+#
+# 官方脚本把二进制装到 ~/.local/bin。引导进程对 PATH 的修改不会传给用户
+# 当前的 shell，所以装完立刻 `command -v starship` 会找不到 —— 用户会以为
+# 装失败了。新 shell 没问题（10-path.zsh 里有 ~/.local/bin），
+# 但必须说清楚。CI 上就是这条差别让容器 job 红了一次。
+SB="$FIX/scriptbox"
+mkdir -p "$SB/bin" "$SB/home" "$SB/cfg/cli"
+cp -r "$DOT_REPO/config/"* "$SB/cfg/" 2>/dev/null || true
+printf '%s\n' \
+    'starship|all|essential|script:https://example.invalid/install.sh|prompt' \
+    >"$SB/cfg/cli/tools.txt"
+printf '#!/bin/sh\nexit 1\n' >"$SB/bin/apt-get"
+printf '#!/bin/sh\nexec "$@"\n' >"$SB/bin/sudo"
+# 替身 curl：回显一段把二进制写进 --bin-dir 的脚本
+cat >"$SB/bin/curl" <<'CURLSTUB'
+#!/bin/sh
+for a in "$@"; do
+    case $a in
+        *install.sh*)
+            printf '%s\n' 'd=$HOME/.local/bin; mkdir -p "$d"; printf "#!/bin/sh\nexit 0\n" > "$d/starship"; chmod +x "$d/starship"'
+            exit 0
+            ;;
+    esac
+done
+exit 1
+CURLSTUB
+chmod +x "$SB/bin/apt-get" "$SB/bin/sudo" "$SB/bin/curl"
+
+sb_out=$(env DOT_OS=linux DOT_PKG_OVERRIDE=apt DOT_DISTRO_OVERRIDE=debian \
+    DOT_CONFIG_DIR="$SB/cfg" HOME="$SB/home" DOT_NO_RUSTUP=1 \
+    PATH="$SB/bin:/usr/bin:/bin" \
+    sh "$BOOT" --only modern-cli 2>&1)
+ok_if 'the script fallback puts the binary in ~/.local/bin' \
+    "[ -x '$SB/home/.local/bin/starship' ]"
+expect_has 'the run says a new shell is needed for PATH' 'open a new shell' "$sb_out"
+expect_has 'the run names the directory it used' '.local/bin' "$sb_out"
+
 printf '\n---------------------------------\n'
 printf 'passed: %s  failed: %s\n' "$_pass" "$_fail"
 [ "$_fail" -eq 0 ] || exit 1
