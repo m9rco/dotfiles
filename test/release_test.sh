@@ -50,6 +50,16 @@ expect_has() {
     fi
 }
 
+expect_lacks() {
+    if printf '%s' "$3" | grep -q -- "$2"; then
+        _fail=$((_fail + 1))
+        printf 'FAIL %s\n       expected output NOT to contain: %s\n' "$1" "$2"
+    else
+        _pass=$((_pass + 1))
+        printf 'ok   %s\n' "$1"
+    fi
+}
+
 ok_if() {
     if eval "$2"; then
         _pass=$((_pass + 1))
@@ -312,6 +322,29 @@ printf '\n== platforms without an asset say so ==\n'
 out=$(run_release nosuchtool o/none linux x86_64)
 expect_has 'a tool with no recipe is reported' 'no release-asset recipe' "$out"
 expect_has 'and it says it was not attempted' 'not attempted' "$out"
+
+# 「配方里没有这个工具」与「配方有、但本平台没资产」是两件事，对调用方却是
+# 同一个结果。必须分开说，否则将来给 btop 加配方时（它零 darwin 资产），
+# macOS 上会看起来像配置漏了一行。
+#
+# 这里用一个只给 linux 提供资产的替身配方来触发后一种情形 —— 目前接进
+# 清单的 6 个工具四个平台组合都有资产，没有现成的例子。
+out=$(env DOT_LIB_DIR="$DOT_REPO/lib" HOME="$FIX/home5" TMPDIR="$FIX/tmp" \
+    DOT_GITHUB_BASE="$BASE" DOT_OS=macos DOT_ARCH=arm64 \
+    sh -c '
+. "$DOT_LIB_DIR/release.sh"
+_dot_release_recipe() {
+    _dot_rr_asset=""
+    _dot_rr_kind=targz
+    _dot_rr_name=linuxonly
+    [ "$DOT_OS" = linux ] && _dot_rr_asset="linuxonly.tar.gz"
+    [ -n "$_dot_rr_asset" ]
+}
+dot_release_install linuxonly o/linuxonly' 2>&1)
+expect_has 'a platform with no asset is reported as such' 'no prebuilt binary for' "$out"
+expect_has 'and that path also says not attempted' 'not attempted' "$out"
+# 关键：这条不能和「配方缺失」混为一谈，否则诊断会把人带错方向
+expect_lacks 'it is not reported as a missing recipe' 'no release-asset recipe' "$out"
 
 # ------------------------------------------------------------------ 开关
 
