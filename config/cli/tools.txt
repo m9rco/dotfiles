@@ -9,8 +9,17 @@
 # 标签：essential = 默认安装，且装不上则模块失败
 #       default   = 默认安装，装不上只告警（shell 配置会优雅降级）
 #       optional  = 需显式选择
-# 回退方式：包管理器里没有时依次尝试，形如 cargo:crate / npm:pkg / script:URL。
-#           留空表示只走包管理器，装不上就报失败。
+# 回退方式：包管理器里没有时依次尝试，形如 cargo:crate / npm:pkg /
+#           script:URL / github:owner/repo。多个用空格分隔，单个 spec
+#           内部不能有空格 —— 这一列是被 word-split 后传下去的。
+#
+#           github: 拉项目自己发布的预编译二进制。清单里只写来源仓库，
+#           资产名与归档结构在 lib/release.sh 的配方表里：二进制从哪来
+#           是读清单的人该一眼看到的，资产名不是。
+#
+#           留空有两种含义，看那一行上方的注释：
+#           要么是「查过，这个项目没有官方预编译二进制」（tmux/htop），
+#           要么是「仓库里到处都有，不需要」。不是「还没人想过」。
 #
 # 关于 essential 与 default 的界线：
 # 所有工具在 zshrc.d 里都做了「存在才启用」，所以没有一个是缺了 shell 就坏。
@@ -27,7 +36,7 @@ ripgrep|all|default|cargo:ripgrep|grep 的替代：默认尊重 .gitignore，快
 fd|all|default|cargo:fd-find|find 的替代：语法直观，默认跳过隐藏文件与 .gitignore
 bat|all|default|cargo:bat|cat 的替代：语法高亮 + git diff 标记，也用作 man 的 pager
 eza|all|default|cargo:eza|ls 的替代：图标、git 状态、树视图（需要 Nerd Font）
-fzf|all|default||模糊查找器：Ctrl-R 历史、Ctrl-T 文件、Alt-C 目录
+fzf|all|default|github:junegunn/fzf|模糊查找器：Ctrl-R 历史、Ctrl-T 文件、Alt-C 目录
 
 # ---------------------------------------------------------------- 导航
 
@@ -36,13 +45,13 @@ zoxide|all|default|cargo:zoxide|按使用频率跳目录，取代手写 cd 路�
 # ---------------------------------------------------------------- git
 
 delta|all|default|cargo:git-delta|git diff 的分屏高亮渲染，见 config/git/gitconfig
-lazygit|all|default||git 的终端 UI：暂存、变基、冲突解决都比命令行快
-gh|all|default||GitHub CLI：PR、issue、release，也用于 gh auth 给 git 提供凭据
+lazygit|all|default|github:jesseduffield/lazygit|git 的终端 UI：暂存、变基、冲突解决都比命令行快
+gh|all|default|github:cli/cli|GitHub CLI：PR、issue、release，也用于 gh auth 给 git 提供凭据
 
 # ---------------------------------------------------------------- 数据处理
 
-jq|all|default||JSON 处理的事实标准
-yq|all|default||jq 之于 JSON，yq 之于 YAML/TOML/XML
+jq|all|default|github:jqlang/jq|JSON 处理的事实标准
+yq|all|default|github:mikefarah/yq|jq 之于 JSON，yq 之于 YAML/TOML/XML
 
 # ---------------------------------------------------------------- prompt
 
@@ -56,8 +65,16 @@ starship|all|essential|script:https://starship.rs/install.sh cargo:starship|跨 
 #
 # 这两个是「配置里已经引用、却没人安装」的补齐项 —— 缺了它们不报错，
 # 只是对应功能静默失效，属于比装不上更难发现的问题。
+#
+# direnv 走 github: 而不是它官方的 install.sh：那个脚本是
+# #!/usr/bin/env bash 且用了 [[ ]]，而 script: 回退是往 `sh -s --` 里灌，
+# dash 上直接语法错误；它还把安装目录读作环境变量 bin_path，不认 --bin-dir。
+#
+# tmux 的回退列刻意留空：这个项目从不发布预编译二进制（release 里只有源码
+# tarball，而且要 libevent+ncurses 才编得起来），同时 apt/dnf/yum/pacman/apk
+# 全都收录了它。空在这里是「查过，没有」，不是「没想过」。
 
-direnv|macos linux|default||进目录自动加载 .envrc，30-tools.zsh 已挂好 hook
+direnv|macos linux|default|github:direnv/direnv|进目录自动加载 .envrc，30-tools.zsh 已挂好 hook
 tmux|macos linux|default||终端复用；20-omz.zsh 的 tmux 插件按它是否存在决定加载
 
 # ---------------------------------------------------------------- 可选
@@ -76,6 +93,10 @@ tmux|macos linux|default||终端复用；20-omz.zsh 的 tmux 插件按它是否�
 atuin|all|optional|cargo:atuin|shell 历史的加强版：SQLite 存储、跨机同步、模糊检索
 
 # 系统监控
+#
+# htop 的回退列同 tmux —— 官方只发源码（要 ncurses），而五个包管理器
+# 全都有它。btop 与 duf 有官方预编译二进制，但它们是 optional、默认不装，
+# 等真有人要再按 lib/release.sh 的配方表加两行即可（btop 只有 Linux 资产）。
 htop|macos linux|optional||交互式进程监控，top 的可用版
 btop|all|optional||htop 的现代版：CPU/内存/网络都有图形化面板
 dust|all|optional|cargo:du-dust|du 的替代：树状展示各目录占用，一眼看出谁在吃盘

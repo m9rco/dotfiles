@@ -90,17 +90,27 @@ RHEL / CentOS 的 base 仓库里没有多数现代 CLI 工具，所以在 `DOT_D
 上引导会先自动启用 **EPEL**（Fedora 项目维护的附加仓库，RHEL 生态的事实
 标准）。启用后 ripgrep、fd、bat、zoxide、delta、direnv、duf 都能直装。
 
-仍有几个工具（`eza` `lazygit` `gh` `yq`）在任何 RHEL 仓库里都没有。它们
+仍有几个工具在任何 RHEL 仓库里都没有，但多数有第二条路：`lazygit` `gh`
+`yq` `direnv` 会去拉项目自己发布的**预编译二进制**（`fzf` `jq` 同理，在
+EPEL 7 那种更老的仓库上用得到）。剩下的 `eza` 只能走 cargo 现场编译。
+
 装不上只告警、不影响退出码 —— shell 配置对缺失工具已做优雅降级。只有标为
 `essential` 的工具（目前只有 `starship`，因为它是 prompt）失败才会让模块
 失败，而 starship 有官方安装脚本兜底，拉的是预编译二进制。
 
-两个开关：
+三个开关：
 
 ```sh
-DOT_NO_EPEL=1   ./bootstrap.sh    # 不动系统仓库（离线，或内部镜像已自带这些包）
-DOT_NO_RUSTUP=1 ./bootstrap.sh    # 不为源码编译安装 Rust 工具链（约 600MB）
+DOT_NO_EPEL=1           ./bootstrap.sh  # 不动系统仓库（离线，或内部镜像已自带这些包）
+DOT_NO_RUSTUP=1         ./bootstrap.sh  # 不为源码编译安装 Rust 工具链（约 600MB）
+DOT_NO_GITHUB_RELEASE=1 ./bootstrap.sh  # 不从 GitHub release 拉预编译二进制
 ```
+
+预编译二进制拉的是项目自己的 GitHub release（来源仓库写在
+`config/cli/tools.txt` 每一行里，资产名在 `lib/release.sh` 的配方表），
+装到 `~/.local/bin`，不碰系统目录、不需要提权。气隙环境或代理不放行
+github.com 时用 `DOT_NO_GITHUB_RELEASE=1` 直接关掉 —— 不关也不会卡很久：
+首次连不上就会跳过后面所有的同类回退。
 
 默认行为是缺 cargo 时装 rustup，因为那是 `eza` 这类工具在老发行版上的唯一
 出路。代价是工具链约 600MB、且之后每个工具都要现场编译 —— 小机器上可能

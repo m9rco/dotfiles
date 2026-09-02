@@ -387,8 +387,9 @@ jobs:
         run: |
           # 这个 job 要证明的是「引导在最小环境里能跑通」，不是
           # 「每个工具都能装上」。debian stable 的仓库里没有 eza / delta /
-          # lazygit / gh / yq / starship，而容器里也没有 cargo 做回退 ——
-          # 那 6 个装不上是环境的真实约束，不是缺陷。
+          # lazygit / gh / yq / starship。其中 lazygit / gh / yq 现在会去拉
+          # GitHub release 的预编译二进制（容器里有 curl），starship 走它的
+          # 官方脚本；真正装不上的只剩 eza 与 delta —— 容器里没有 cargo。
           #
           # 所以只对不依赖第三方仓库的模块断言成功：zsh 与 git。
           # modern-cli 的部分失败单独验证（下一步）。
@@ -414,11 +415,24 @@ jobs:
             echo 'expected at least one tool to install'
             exit 1
           }
-          # 失败的工具必须被点名
+          # 失败的工具必须被点名。
+          #
+          # 这条现在只剩 eza 与 delta 撑着（都只有 cargo 回退，而容器里
+          # 没有 cargo）。lazygit/gh/yq 从前也在这个集合里，现在走 GitHub
+          # release 装上了 —— 所以别把这条当成「总有工具会失败」的证明，
+          # 它证的是「失败的会被点名」。
           echo "$out" | grep -q 'could not install' || {
             echo 'expected the unavailable tools to be named'
             exit 1
           }
+          # 仓库里没有、但有预编译二进制的那几个必须真的装上了 ——
+          # 这是 github: 回退在真实容器里的端到端证明。
+          for tool in lazygit gh yq; do
+            echo "$out" | grep -q "installed $tool via GitHub release" || {
+              echo "$tool should have installed from its GitHub release"
+              exit 1
+            }
+          done
           # 非必需工具装不上不该影响退出码
           if [ "$rc" != 0 ]; then
             echo "non-essential failures must not fail the module (exit $rc)"
@@ -560,6 +574,10 @@ jobs:
 
           # 这些包在 Rocky 9 + EPEL 9 里确实存在（实测过），所以必须
           # 从仓库装上，而不是退化成源码编译。任一走了回退都说明包名写错了。
+          #
+          # fzf/jq/yq/gh 现在同时声明了 github: 回退 —— 这几行因此还兼任
+          # 另一个角色：证明预编译二进制**没有抢走**仓库里本来有的包。
+          # 回退只能在包管理器失败之后才轮到。
           for tool in ripgrep fd bat fzf zoxide delta jq yq gh tmux; do
             echo "$out" | grep -qE "installed $tool via dnf" || {
               echo "$tool should have installed from the repo (package name wrong?)"
@@ -573,8 +591,18 @@ jobs:
             exit 1
           }
 
-          # eza/lazygit/direnv 在 Rocky 9 的任何仓库里都没有 —— 装不上是
-          # 环境的真实约束，不该让引导失败
+          # lazygit 与 direnv 在 Rocky 9 的任何仓库里都没有，但两个项目都发
+          # 预编译二进制 —— 这是 github: 回退存在的理由，也是它在 RHEL 上的
+          # 端到端证明。
+          for tool in lazygit direnv; do
+            echo "$out" | grep -q "installed $tool via GitHub release" || {
+              echo "$tool should have installed from its GitHub release"
+              exit 1
+            }
+          done
+
+          # eza 在 Rocky 9 的任何仓库里都没有，也没有预编译二进制可用
+          # （只有 cargo）—— 装不上是环境的真实约束，不该让引导失败
           if [ "$rc" != 0 ]; then
             echo "non-essential failures must not fail the module (exit $rc)"
             exit 1

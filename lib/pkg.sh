@@ -20,6 +20,10 @@ _dot_pkg_lib=${DOT_LIB_DIR:-$(dirname -- "$0")}
 # detect.sh 提供 dot_detect_ensure_pkg 与 DOT_* 契约变量
 # shellcheck source=lib/detect.sh
 . "$_dot_pkg_lib/detect.sh"
+# release.sh 提供 dot_release_install（github: 回退）。它自己会 source
+# download.sh。
+# shellcheck source=lib/release.sh
+. "$_dot_pkg_lib/release.sh"
 
 # 加载当前平台的适配层。DOT_PLATFORM_DIR 由 bootstrap.sh 设置。
 dot_pkg_load_platform() {
@@ -162,6 +166,30 @@ _dot_pkg_try_npm() {
 #
 # 装到 ~/.local/bin 而不是 /usr/local/bin：免提权，且与本仓库
 # 「不碰系统目录」的前提一致。
+# 把 ~/.local/bin 接进本进程的 PATH，并记下要提示用户重开 shell。
+#
+# 为什么必须导出 PATH：不导出的话紧随其后的 dot_pkg_installed 判定会失败，
+# 于是刚装成的工具被报成装不上。
+#
+# 为什么必须提示：导出只影响引导进程自身，用户当前的 shell 仍然找不到这个
+# 工具，直到重开终端。zsh 配置里有 ~/.local/bin（10-path.zsh），所以新
+# shell 没问题；但不说清楚的话，用户会以为「装了却没装上」。CI 上就是这条
+# 差别让容器 job 红过一次。
+#
+# script: 与 github: 两条回退都装到这个目录，所以 DOT_PKG_PATH_NOTICE
+# 保持标量就够 —— 两个写入者写的是同一个值。
+_dot_pkg_use_local_bin() {
+    case ":$PATH:" in
+        *":$1:"*) ;;
+        *)
+            PATH="$1:$PATH"
+            export PATH
+            DOT_PKG_PATH_NOTICE=$1
+            export DOT_PKG_PATH_NOTICE
+            ;;
+    esac
+}
+
 _dot_pkg_try_script() {
     _dot_script_url=$1
     command -v curl >/dev/null 2>&1 || {
@@ -175,27 +203,20 @@ _dot_pkg_try_script() {
 
     if curl -fsSL "$_dot_script_url" |
         sh -s -- --yes --bin-dir "$_dot_script_bin" >/dev/null 2>&1; then
-        # 脚本装到 ~/.local/bin，当前 shell 的 PATH 可能还没有它。
-        # 不导出的话紧随其后的 dot_pkg_installed 判定会失败。
-        case ":$PATH:" in
-            *":$_dot_script_bin:"*) ;;
-            *)
-                PATH="$_dot_script_bin:$PATH"
-                export PATH
-                # 记下来，引导结束时统一提示 —— 导出只影响引导进程自身，
-                # 用户当前的 shell 仍然找不到这个工具，直到重开终端。
-                # zsh 配置里有 ~/.local/bin，所以新 shell 没问题；
-                # 但不说清楚的话，用户会以为「装了却没装上」。
-                DOT_PKG_PATH_NOTICE=$_dot_script_bin
-                export DOT_PKG_PATH_NOTICE
-                ;;
-        esac
+        _dot_pkg_use_local_bin "$_dot_script_bin"
         return 0
     fi
 
     # 不接受 --bin-dir 的脚本用不带参数的方式再试一次 —— 各家脚本
     # 的参数约定不统一，硬要求某个 flag 会把本来能用的路堵死。
     curl -fsSL "$_dot_script_url" | sh -s -- --yes >/dev/null 2>&1
+}
+
+# 官方 release 的预编译二进制。参数是 owner/repo；资产名与归档结构在
+# lib/release.sh 的配方表里。
+_dot_pkg_try_github() {
+    dot_release_install "$1" "$2" || return 1
+    _dot_pkg_use_local_bin "$HOME/.local/bin"
 }
 
 # ---------------------------------------------------------------- 入口
@@ -215,8 +236,12 @@ dot_pkg_prepare_repos() {
 
 # dot_pkg_install <logical-name> [fallback-spec...]
 #
-# fallback-spec 形如 cargo:crate-name / npm:package-name / script:https://...
-# 未给出时只尝试平台包管理器。
+# fallback-spec 形如 cargo:crate-name / npm:package-name / script:https://... /
+# github:owner/repo。未给出时只尝试平台包管理器。
+#
+# spec 里不能有空格 —— 调用方是 word-split 后传进来的（见
+# modules/modern-cli/module.sh），多一个空格就会变成两条垃圾 spec，
+# 两条都落到下面的 *) 分支。那不致命，于是工具会静默地不装。
 #
 # 返回 0 表示已就位（含"本来就装了"），非零表示所有方式都失败。
 dot_pkg_install() {
@@ -271,6 +296,10 @@ dot_pkg_install() {
             } ;;
             script) _dot_pkg_try_script "$_dot_fb_arg" && {
                 dot_success "installed $_dot_want via install script"
+                return 0
+            } ;;
+            github) _dot_pkg_try_github "$_dot_want" "$_dot_fb_arg" && {
+                dot_success "installed $_dot_want via GitHub release"
                 return 0
             } ;;
             *) dot_error "unknown fallback spec: $_dot_fb" ;;

@@ -290,6 +290,68 @@ out=$(runcli "$MANIFEST")
 expect 'package manager is not called for it' '' "$(installed_log)"
 expect_has 'fallback is attempted or reported' 'norepo' "$out"
 
+# ------------------------------------------------------------------ github 回退
+#
+# 预编译二进制回退。这组用例一次网络都不发：替身 curl/wget 只记录被调用
+# 的事实，够用来断言「该调的时候调了、不该调的时候没调」。
+# 真实的下载-解包-落地在 test/release_test.sh 里用本地 fixture server 验。
+
+printf '\n== the github fallback ==\n'
+
+NETLOG="$FIX/net.log"
+# 替身 curl/wget：记录调用后失败。失败是有意的 —— 这组只关心「有没有
+# 发起网络请求」，成功路径由 release_test.sh 覆盖。
+for _n in curl wget; do
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s"\nexit 1\n' "$NETLOG" >"$FIX/bin/$_n"
+    chmod +x "$FIX/bin/$_n"
+done
+
+net_called() { [ -s "$NETLOG" ] && printf 'yes' || printf ''; }
+
+# 最重要的一条：包管理器能装成时绝不能碰网络。
+# 这是「github 回退不会抢走仓库里本来有的包」的回归保护。
+: >"$NETLOG"
+MANIFEST="fzf|all|default|github:junegunn/fzf|has a package and a fallback"
+out=$(runcli "$MANIFEST")
+expect 'the package manager installs it' 'fzf' "$(installed_log)"
+expect 'no network when the package manager succeeds' '' "$(net_called)"
+
+# 包管理器没有这个包时才轮到 github
+: >"$NETLOG"
+MANIFEST="norepo|all|default|github:foo/norepo|not in repos"
+out=$(runcli "$MANIFEST")
+expect_has 'a missing recipe says it was not attempted' 'not attempted' "$out"
+# 「未尝试」不能被说成「已尝试」—— spec 明确要求区分
+expect_lacks 'a missing recipe does not claim it tried' 'tried github' "$out"
+
+# dry-run 一次网络都不能发。放这条是因为计划消息很容易被后人「优化」成
+# 真去查一下最新版本 —— 那就违反了 dry-run 零副作用的契约。
+: >"$NETLOG"
+MANIFEST="fzf|all|default|github:junegunn/fzf|dry run"
+out=$(runcli "$MANIFEST" --dry-run)
+expect 'dry-run makes no network calls' '' "$(net_called)"
+expect_has 'dry-run still prints a plan' 'would install' "$out"
+
+rm -f "$FIX/bin/curl" "$FIX/bin/wget"
+
+# 既没 curl 也没 wget 时要说清缺什么，而不是含糊失败
+MANIFEST="norepo|all|default|github:junegunn/fzf|no downloader"
+out=$(env PATH="$FIX/nodl:/usr/bin:/bin" sh -c '
+    mkdir -p "$1/nodl"
+    for t in sh printf grep sed cat mktemp rm mkdir chmod find ls date dirname \
+        basename tr cut head env uname id ln readlink mv cp wc od dd sort uniq \
+        stty tar gzip apt-get; do
+        p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$1/nodl/$t" 2>/dev/null
+    done
+    mkdir -p "$1/cfg/cli"
+    printf "%s\n" "$2" >"$1/cfg/cli/tools.txt"
+    : >"$1/install.log"
+    DOT_CONFIG_DIR="$1/cfg" DOT_PLATFORM_DIR="$1/platform" \
+        DOT_TEST_LOG="$1/install.log" PATH="$1/nodl" \
+        sh "$3" --only modern-cli 2>&1
+' _ "$FIX" "$MANIFEST" "$BOOT")
+expect_has 'no curl/wget is reported as not attempted' 'not attempted' "$out"
+
 # ------------------------------------------------------------------ 真实清单
 
 printf '\n== the real manifest is well formed ==\n'
@@ -337,6 +399,89 @@ for referenced in direnv tmux; do
     ok_if "$referenced is in the manifest (referenced by zshrc.d)" \
         "grep -q '^$referenced|' '$REAL'"
 done
+
+# ---------------------------------------------------------------- github 配方
+#
+# 清单里的 github:owner/repo 与 lib/release.sh 的配方表是两处会漂移的地方。
+# 双向钉住，照 test/lint.sh 对 dnf/yum 包名的做法。
+
+printf '\n== the manifest and the recipe table agree ==\n'
+
+# spec 里有空格会被 word-split 成两条垃圾 spec，两条都落到「unknown
+# fallback spec」—— 那不致命，于是工具静默地不装。所以形状要严格。
+#
+# 只看真实条目的第 4 列：注释里也会出现 "github:"（解释这个语法本身），
+# 拿整个文件 grep 会把说明文字当成 spec。
+badshape=''
+while IFS='|' read -r n _ _ fb _; do
+    case $n in '' | \#*) continue ;; esac
+    for tok in $fb; do
+        case $tok in
+            github:*)
+                case $tok in
+                    github:[A-Za-z0-9_.-]*/[A-Za-z0-9_.-]*) ;;
+                    *) badshape="$badshape $tok" ;;
+                esac
+                ;;
+        esac
+    done
+done <"$REAL"
+expect 'every github: spec is owner/repo with no spaces' '' "$badshape"
+
+# 清单声明了 github: 的工具，配方表必须认得 —— 否则运行时才发现「没有配方」
+missing=''
+grep -E '\|github:' "$REAL" | cut -d'|' -f1 >"$FIX/ghtools"
+while read -r tool; do
+    [ -n "$tool" ] || continue
+    for combo in linux/x86_64 linux/arm64 macos/x86_64 macos/arm64; do
+        got=$(env DOT_LIB_DIR="$DOT_REPO/lib" \
+            DOT_OS="${combo%%/*}" DOT_ARCH="${combo#*/}" \
+            sh -c ". \"$DOT_REPO/lib/release.sh\"; _dot_release_recipe \"\$1\" && printf '%s' \"\$_dot_rr_asset\"" \
+            _ "$tool" 2>/dev/null)
+        [ -n "$got" ] || missing="$missing $tool($combo)"
+    done
+done <"$FIX/ghtools"
+expect 'every github: tool has an asset for all four os/arch combos' '' "$missing"
+
+# 反向：配方表里的工具也该真的在清单里声明了 github:，否则是死代码
+orphan=''
+for tool in fzf lazygit gh jq yq direnv; do
+    grep -qE "^$tool\|.*\|github:" "$REAL" || orphan="$orphan $tool"
+done
+expect 'every recipe in the table is wired in the manifest' '' "$orphan"
+
+# 这 6 个的回退列不能再被清空 —— 那正是本次改动要修的问题
+for wired in fzf lazygit gh jq yq direnv; do
+    fb=$(grep "^$wired|" "$REAL" | cut -d'|' -f4)
+    expect_has "$wired still declares a fallback" 'github:' "$fb"
+done
+
+# tmux/htop 的空回退是刻意的结论，不是遗漏。空着 + 注释在位，两者都钉住，
+# 否则「查过没有」与「忘了填」在半年后无法区分。
+for blank in tmux htop; do
+    fb=$(grep "^$blank|" "$REAL" | cut -d'|' -f4)
+    expect "$blank deliberately has no fallback" '' "$fb"
+done
+ok_if 'the manifest explains why tmux/htop have none' \
+    "grep -q '从不发布预编译二进制' '$REAL'"
+
+# 预编译二进制必须排在源码编译之前（spec：预编译优先）。
+# 推广原先只针对 starship 的那条断言 —— 任何同时声明两者的工具都适用。
+badorder=''
+while IFS='|' read -r n _ _ fb _; do
+    case $n in '' | \#*) continue ;; esac
+    case $fb in
+        *cargo:*)
+            case $fb in
+                # cargo 之前还有别的方式时，那些必须先出现
+                *github:*cargo:* | *script:*cargo:*) ;;
+                *cargo:*github:* | *cargo:*script:*) badorder="$badorder $n" ;;
+                *) ;;
+            esac
+            ;;
+    esac
+done <"$REAL"
+expect 'prebuilt routes come before cargo everywhere' '' "$badorder"
 
 # ------------------------------------------------------------------ git 模块
 

@@ -101,7 +101,7 @@ font-provisioning|预演模式不下载|modules/fonts|test:fonts_test.sh
 
 modern-cli-toolchain|声明式工具清单|config/cli/tools.txt|test:cli_test.sh
 modern-cli-toolchain|默认工具集|config/cli/tools.txt|test:cli_test.sh
-modern-cli-toolchain|包管理器不可用时的回退|lib/pkg.sh|test:cli_test.sh
+modern-cli-toolchain|包管理器不可用时的回退|lib/pkg.sh + lib/release.sh + lib/download.sh|test:cli_test.sh + test:release_test.sh
 modern-cli-toolchain|附加仓库的启用|platform/linux.sh|test:cli_test.sh
 modern-cli-toolchain|工具失败的致命性分级|modules/modern-cli|test:cli_test.sh
 modern-cli-toolchain|工具安装幂等|lib/pkg.sh|test:cli_test.sh
