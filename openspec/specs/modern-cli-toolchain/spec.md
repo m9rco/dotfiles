@@ -40,7 +40,7 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 
 ### Requirement: 包管理器不可用时的回退
 
-当某工具在当前平台的包管理器中不可用时，系统 SHALL 尝试受支持的回退安装方式（如官方发布二进制、cargo、npm）。回退也失败时 MUST 记录该工具失败并继续处理其余工具，MUST NOT 中断整个模块。
+当某工具在当前平台的包管理器中不可用时，系统 SHALL 尝试受支持的回退安装方式（如官方发布二进制、cargo、npm）。回退也失败时 MUST 记录该工具失败并继续处理其余工具，MUST NOT 中断整个模块。当某回退方式所需的工具链本身缺失时，系统 MUST 明确说明该方式未被尝试及原因，MUST NOT 报告为「已尝试」。
 
 #### Scenario: 使用回退方式安装
 
@@ -53,6 +53,66 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 - **WHEN** 某工具的所有安装方式均失败
 - **THEN** 其余工具继续安装
 - **AND** 汇总中列出该工具及失败原因
+
+#### Scenario: 回退方式所需工具链缺失
+
+- **WHEN** 某工具声明了 cargo 回退但当前机器没有 cargo
+- **THEN** 输出说明 cargo 不可用、该回退未被尝试
+- **AND** MUST NOT 声称已尝试该回退方式
+
+#### Scenario: 预编译二进制优先于源码编译
+
+- **WHEN** 某工具同时声明了官方安装脚本与 cargo 回退
+- **THEN** 先尝试官方脚本（预编译二进制）
+- **AND** 仅在其失败后才尝试 cargo
+
+### Requirement: 附加仓库的启用
+
+在 RHEL 族（`DOT_DISTRO` 为 `rhel`）上，系统 SHALL 在安装工具前启用 EPEL —— 该发行版的 base 仓库缺少多数现代 CLI 工具。启用 MUST 在一次引导内只执行一次，已启用时 MUST NOT 重复安装。启用失败 MUST NOT 使模块失败（缺少 EPEL 只是让更多工具走回退链）。Fedora MUST NOT 启用 EPEL（其官方仓库已收录这些包）。系统 SHALL 提供关闭该行为的开关，以适配离线环境或已自带这些包的内部镜像。
+
+#### Scenario: RHEL 族启用 EPEL
+
+- **WHEN** `DOT_DISTRO` 为 `rhel` 且 EPEL 未启用
+- **THEN** 系统在安装第一个包之前安装 `epel-release`
+- **AND** 随后的工具安装从 EPEL 取得包
+
+#### Scenario: 已启用则不重复
+
+- **WHEN** EPEL 已在仓库列表中
+- **THEN** 不再安装 `epel-release`
+
+#### Scenario: Fedora 不需要 EPEL
+
+- **WHEN** `DOT_DISTRO` 为 `fedora`
+- **THEN** 不安装 `epel-release`
+
+#### Scenario: 显式关闭
+
+- **WHEN** 设置了关闭开关
+- **THEN** 不进行任何 EPEL 相关操作
+- **AND** 工具安装照常进行（缺包者走回退链）
+
+### Requirement: 工具失败的致命性分级
+
+清单中的每个工具 SHALL 标注 `essential`、`default` 或 `optional`。只有 `essential` 工具安装失败时模块才 MUST 以失败状态结束；`default` 工具失败 MUST 只告警并使模块成功结束 —— shell 配置对缺失工具已做优雅降级，让整台机器的引导因一个便利工具装不上而失败是不成比例的。未知标签值 MUST 报错，MUST NOT 静默当作默认值处理。
+
+#### Scenario: 非必需工具失败不影响退出码
+
+- **WHEN** 某 `default` 工具的所有安装方式均失败
+- **THEN** 输出列出该工具并说明它不是必需的
+- **AND** 模块以成功状态结束
+
+#### Scenario: 必需工具失败导致模块失败
+
+- **WHEN** 某 `essential` 工具的所有安装方式均失败
+- **THEN** 输出单独标注哪些是必需工具
+- **AND** 模块以失败状态结束
+
+#### Scenario: 标签拼写错误被拒绝
+
+- **WHEN** 清单中某行的标签值不是三个合法值之一
+- **THEN** 系统报错并指出该标签值
+- **AND** MUST NOT 把该行静默当作 `default` 处理
 
 ### Requirement: 工具安装幂等
 

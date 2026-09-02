@@ -2,7 +2,7 @@
 
 生成命令：`sh test/spec_coverage.sh`
 
-requirement 总数：85
+requirement 总数：87
 
 ## ai-agent-config
 
@@ -86,13 +86,15 @@ requirement 总数：85
 
 ## modern-cli-toolchain
 
-9 条 requirement / 19 个 scenario
+11 条 requirement / 28 个 scenario
 
 | Requirement | 实现 | 验证 |
 |---|---|---|
 | 声明式工具清单 | `config/cli/tools.txt` | test:cli_test.sh |
 | 默认工具集 | `config/cli/tools.txt` | test:cli_test.sh |
 | 包管理器不可用时的回退 | `lib/pkg.sh` | test:cli_test.sh |
+| 附加仓库的启用 | `platform/linux.sh` | test:cli_test.sh |
+| 工具失败的致命性分级 | `modules/modern-cli` | test:cli_test.sh |
 | 工具安装幂等 | `lib/pkg.sh` | test:cli_test.sh |
 | shell 集成 hook | `config/zsh/zshrc.d/30-tools.zsh` | manual:zoxide/fzf 实测生效 |
 | 别名与传统命令共存 | `config/zsh/zshrc.d/40-aliases.zsh` | manual:仅交互式生效，脚本用原命令 |
@@ -102,7 +104,7 @@ requirement 总数：85
 
 ## platform-detection
 
-9 条 requirement / 28 个 scenario
+9 条 requirement / 32 个 scenario
 
 | Requirement | 实现 | 验证 |
 |---|---|---|
@@ -153,6 +155,6 @@ requirement 总数：85
 | 跨 shell 共享配置 | `config/starship.toml` | manual:两侧读同一文件 |
 
 
-covered: 85 / 85
+covered: 87 / 87
 every requirement maps to an implementation and a verification method
 all referenced tests and implementation paths exist

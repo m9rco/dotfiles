@@ -262,26 +262,39 @@ fi
 
 # ---------------------------------------------------------------- 包名映射完整性
 
-# RHEL 族的包名对 dnf 与 yum 是同一套，所以包名映射表里每个 dnf 分支都必须
+# RHEL 族的包名对 dnf 与 yum 多数是同一套，所以包名映射表里 dnf 分支通常都要
 # 同时列上 yum。漏一个不会报错 —— dot_platform_pkg_name 返回空串，pkg.sh
 # 当作「仓库里没这个包」转去走 cargo 回退，于是在只有 yum 的机器上
 # （RHEL/CentOS 7、Amazon Linux 2）本可 yum 直装的工具变成现场编译，
 # 慢几十倍且可能因缺 toolchain 失败。症状与「包确实不存在」无法区分。
 #
+# 但「包名一致」不等于「可用性一致」：github-cli 在 Fedora 仓库里有，
+# 而 RHEL/CentOS 的 base 与 EPEL 都没有。这类情形是正当例外，用
+# `# yum-differs:` 注释显式标注 —— 要求写注释而不是默许，
+# 是为了区分「想清楚了」和「忘了加」。
+#
 # 只查 dot_platform_pkg_name 函数体：dot_platform_pkg_install 里的
 # `dnf)` 分支是安装命令，必须与 yum 分开（命令名不同），不适用此规则。
 if [ -f platform/linux.sh ]; then
     _pkgname_body=$(sed -n '/^dot_platform_pkg_name()/,/^}/p' platform/linux.sh)
+    # 剔除被 yum-differs 标注的行：注释出现在分支行之前，所以先把
+    # 标注行与紧随其后的分支行一起去掉。
     _bare_dnf=$(printf '%s\n' "$_pkgname_body" |
-        grep -n 'dnf' | grep -v 'yum' || true)
-    if [ -n "$_bare_dnf" ]; then
-        printf 'FAILED: dot_platform_pkg_name has dnf branches missing yum:\n'
+        grep -v '^[[:space:]]*#' |
+        grep 'dnf' | grep -v 'yum' || true)
+    # 有 yum-differs 标注时，允许的例外数就是标注数
+    _exceptions=$(printf '%s\n' "$_pkgname_body" | grep -c 'yum-differs:' || true)
+    _bare_count=$(printf '%s' "$_bare_dnf" | grep -c . || true)
+    if [ "$_bare_count" -gt "$_exceptions" ]; then
+        printf 'FAILED: dot_platform_pkg_name has %s dnf branch(es) missing yum but only %s marked as intentional:\n' \
+            "$_bare_count" "$_exceptions"
         printf '%s\n' "$_bare_dnf" | sed 's/^/  /'
-        printf '  RHEL-family package names are identical for dnf and yum — list both,\n'
+        printf '  RHEL-family package names are usually identical for dnf and yum — list both,\n'
         printf '  or yum-only machines silently fall back to compiling from source.\n'
+        printf '  If the package genuinely differs in availability, add a "# yum-differs:" comment.\n'
         _rc=1
     else
-        printf 'every dnf package-name branch also covers yum: ok\n'
+        printf 'every dnf package-name branch covers yum or is marked yum-differs: ok\n'
     fi
 fi
 

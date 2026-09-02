@@ -236,14 +236,43 @@ expect_has 'later tool is still attempted' 'INSTALL:after' "$(cat "$FIX/install.
 expect_has 'failure is reported' 'could not install' "$out"
 expect_has 'the failed tool is named' 'alwaysfails' "$out"
 
-printf '\n== failure makes the module exit non-zero ==\n'
+printf '\n== only essential failures make the module exit non-zero ==\n'
+#
+# 之前任何默认工具装不上都让模块失败，而紧随的提示却说「这些工具可选、
+# shell 会优雅降级」—— 自相矛盾。在包源贫乏的发行版上这个矛盾很致命：
+# RHEL/CentOS 7 的仓库里没有 eza/lazygit/gh/yq，引导于是永远非零退出，
+# 即使 zsh、git、字体、密钥全都装好了。
 mkdir -p "$FIX/cfg/cli"
+
+# default 失败：只告警，退出码 0
 printf '%s\n' "alwaysfails|all|default||fails" >"$FIX/cfg/cli/tools.txt"
 : >"$FIX/install.log"
-DOT_CONFIG_DIR="$FIX/cfg" DOT_PLATFORM_DIR="$FIX/platform" \
+out=$(DOT_CONFIG_DIR="$FIX/cfg" DOT_PLATFORM_DIR="$FIX/platform" \
     DOT_TEST_LOG="$FIX/install.log" PATH="$FIX/bin:/usr/bin:/bin" \
-    sh "$BOOT" --only modern-cli >/dev/null 2>&1
-expect 'exit code reflects the failure' 1 "$?"
+    sh "$BOOT" --only modern-cli 2>&1)
+rc=$?
+expect 'a non-essential failure still exits 0' 0 "$rc"
+expect_has 'the failed tool is still named' 'alwaysfails' "$out"
+expect_has 'it says the tool was not essential' 'none of these are essential' "$out"
+
+# essential 失败：模块失败，退出码非零
+printf '%s\n' "alwaysfails|all|essential||fails" >"$FIX/cfg/cli/tools.txt"
+: >"$FIX/install.log"
+out=$(DOT_CONFIG_DIR="$FIX/cfg" DOT_PLATFORM_DIR="$FIX/platform" \
+    DOT_TEST_LOG="$FIX/install.log" PATH="$FIX/bin:/usr/bin:/bin" \
+    sh "$BOOT" --only modern-cli 2>&1)
+rc=$?
+expect 'an essential failure exits non-zero' 1 "$rc"
+expect_has 'the essential failure is called out as such' 'essential:' "$out"
+
+# 打错的标签必须报错而不是默默不装 —— 静默漂移最难发现
+printf '%s\n' "typo|all|defualt||typo in tag" >"$FIX/cfg/cli/tools.txt"
+out=$(DOT_CONFIG_DIR="$FIX/cfg" DOT_PLATFORM_DIR="$FIX/platform" \
+    DOT_TEST_LOG="$FIX/install.log" PATH="$FIX/bin:/usr/bin:/bin" \
+    sh "$BOOT" --only modern-cli 2>&1)
+rc=$?
+expect 'a misspelled tag exits non-zero' 1 "$rc"
+expect_has 'the misspelled tag is named' 'defualt' "$out"
 
 printf '\n== not in the repos: falls back ==\n'
 # norepo 的包名映射返回空，应直接走回退链而不调用包管理器
@@ -266,7 +295,7 @@ while IFS='|' read -r n p t f d; do
         continue
     fi
     case $t in
-        default | optional) ;;
+        essential | default | optional) ;;
         *) bad="$bad $n(tag=$t)" ;;
     esac
     # 每个工具都该有说明 —— 半年后回头看清单要能想起为什么装它
@@ -278,11 +307,20 @@ expect 'every real entry has platforms, a valid tag and a description' '' "$bad"
 atuin_tag=$(grep '^atuin|' "$REAL" | cut -d'|' -f3)
 expect 'atuin stays optional' 'optional' "$atuin_tag"
 
-# 默认集应该正好是设计里确定的 14 个：12 个现代 CLI 工具，加上
+# 默认安装的工具应该正好是设计里确定的 14 个：12 个现代 CLI 工具，加上
 # direnv 与 tmux —— 这两个是 zshrc.d 的片段已经引用的，不装它们
 # 对应功能会静默失效。改这个数字前请确认新增的确实该默认装。
-default_count=$(grep -vE '^\s*#|^\s*$' "$REAL" | cut -d'|' -f3 | grep -c '^default$')
-expect 'the default set has 14 tools' '14' "$(printf '%s' "$default_count" | tr -d ' ')"
+#
+# essential 与 default 都是默认安装，区别只在装不上时是否致命，
+# 所以这里两者都数。
+installed_by_default=$(grep -vE '^\s*#|^\s*$' "$REAL" | cut -d'|' -f3 |
+    grep -cE '^(essential|default)$')
+expect 'the default set has 14 tools' '14' "$(printf '%s' "$installed_by_default" | tr -d ' ')"
+
+# starship 必须是 essential —— 它是 prompt，缺了外观立刻退化，
+# 而且它是 zsh 与 PowerShell 共用同一份配置的那个点。
+starship_tag=$(grep '^starship|' "$REAL" | cut -d'|' -f3)
+expect 'starship is essential' 'essential' "$starship_tag"
 
 # 配置片段引用了却没人安装的工具是最难发现的一类问题 —— 装不上会报错，
 # 而「压根没进清单」只是功能静默消失。这里把两处钉在一起。
@@ -405,10 +443,14 @@ pkgname_under() {
         sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_name \"\$1\"" _ "$2" 2>/dev/null
 }
 
-# 包名对 dnf 与 yum 必须一致 —— RHEL 族是同一套包名。
+# 包名对 dnf 与 yum 多数必须一致 —— RHEL 族是同一套包名。
 # 逐个比对而不是抽查：漏一个的症状是静默走 cargo 编译，不报错。
+#
+# gh 是刻意的例外：github-cli 在 Fedora 仓库里有，RHEL/CentOS 的 base
+# 与 EPEL 都没有，所以 yum 侧返回空走回退。「包名一致」不等于
+# 「可用性一致」—— platform/linux.sh 里用 # yum-differs: 标注了这一点。
 mismatch=''
-for tool in fd bat rg delta eza lazygit starship zoxide atuin gh yq \
+for tool in fd bat rg delta eza lazygit starship zoxide atuin yq \
     dust procs xh sd tldr duf hyperfine btop htop direnv tmux \
     fzf jq git zsh curl unzip; do
     a=$(pkgname_under dnf "$tool")
@@ -417,9 +459,12 @@ for tool in fd bat rg delta eza lazygit starship zoxide atuin gh yq \
 done
 expect 'every tool maps to the same package name under dnf and yum' '' "$mismatch"
 
+# gh 的例外必须是「有意为之」而不是漂移，所以两侧的值都钉死
+expect 'gh maps to github-cli under dnf (Fedora has it)' 'github-cli' "$(pkgname_under dnf gh)"
+expect 'gh maps to nothing under yum (RHEL/EPEL lack it)' '' "$(pkgname_under yum gh)"
+
 # 抽查两个有实际映射的，确认不是「两边都是空串所以相等」
 expect 'fd maps to fd-find under yum' 'fd-find' "$(pkgname_under yum fd)"
-expect 'gh maps to github-cli under yum' 'github-cli' "$(pkgname_under yum gh)"
 expect 'delta maps to git-delta under yum' 'git-delta' "$(pkgname_under yum delta)"
 
 # 安装命令必须调 yum 而不是 dnf。只有 yum 的机器上调 dnf 会直接失败。
@@ -445,6 +490,144 @@ env DOT_PKG=dnf PATH="$YB/bin:$PATH" DOT_LIB_DIR="$DOT_REPO/lib" \
     >/dev/null 2>&1
 calls=$(cat "$YB/calls.log" 2>/dev/null || true)
 expect_has 'DOT_PKG=dnf still uses dnf' 'dnf-was-called' "$calls"
+
+printf '\n== EPEL is enabled on RHEL-family before installing ==\n'
+#
+# RHEL/CentOS 的 base 仓库里没有 ripgrep/fd-find/bat/zoxide/git-delta/
+# direnv/duf —— 它们都在 EPEL 里。不启用 EPEL 的话默认集 14 个有 7 个
+# 从仓库装不到，全部退化成源码编译（CentOS 7 上是几十分钟且很可能编不过）。
+#
+# 这组是变异测试逼出来的：EPEL 逻辑写完后把它整段删掉，测试竟然全过 ——
+# 这次改动最重要的部分毫无断言覆盖。
+EB="$FIX/epelbox"
+mkdir -p "$EB/bin"
+cat >"$EB/bin/yum" <<'YUMSTUB'
+#!/bin/sh
+echo "yum $*" >>"$EPEL_LOG"
+case "$1" in
+    repolist)
+        [ -f "$EPEL_MARK" ] && { echo '!epel/x86_64 EPEL'; exit 0; }
+        echo 'base/7/x86_64 CentOS-7 - Base'
+        exit 0
+        ;;
+    install)
+        [ "$3" = epel-release ] && { touch "$EPEL_MARK"; exit 0; }
+        case $3 in
+            ripgrep | fd-find | bat | zoxide | git-delta | direnv | duf)
+                [ -f "$EPEL_MARK" ] && exit 0
+                exit 1
+                ;;
+            git | zsh | jq | fzf | tmux | curl | unzip) exit 0 ;;
+        esac
+        exit 1
+        ;;
+esac
+exit 1
+YUMSTUB
+cp "$EB/bin/yum" "$EB/bin/dnf"
+printf '#!/bin/sh\nexec "$@"\n' >"$EB/bin/sudo"
+chmod +x "$EB/bin/yum" "$EB/bin/dnf" "$EB/bin/sudo"
+
+# 每次都用干净的 log 与 mark 跑一次安装，回显调用记录
+run_epel() {
+    rm -f "$EB/mark"
+    : >"$EB/log"
+    env EPEL_LOG="$EB/log" EPEL_MARK="$EB/mark" \
+        DOT_PKG="$1" DOT_DISTRO="$2" DOT_LIB_DIR="$DOT_REPO/lib" \
+        PATH="$EB/bin:/usr/bin:/bin" \
+        sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_install ripgrep" \
+        >/dev/null 2>&1
+    cat "$EB/log" 2>/dev/null || true
+}
+
+log=$(run_epel yum rhel)
+expect_has 'yum on rhel installs epel-release first' 'install -y epel-release' "$log"
+expect_has 'the real package is installed after EPEL' 'install -y ripgrep' "$log"
+
+log=$(run_epel dnf rhel)
+expect_has 'dnf on rhel also enables EPEL' 'epel-release' "$log"
+
+# Fedora 自带这些包，不该去装 EPEL
+log=$(run_epel dnf fedora)
+expect_lacks 'fedora does not need EPEL' 'epel-release' "$log"
+
+# 已启用时不重复装
+: >"$EB/log"
+touch "$EB/mark"
+env EPEL_LOG="$EB/log" EPEL_MARK="$EB/mark" \
+    DOT_PKG=yum DOT_DISTRO=rhel DOT_LIB_DIR="$DOT_REPO/lib" \
+    PATH="$EB/bin:/usr/bin:/bin" \
+    sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_install ripgrep" \
+    >/dev/null 2>&1
+expect_lacks 'an already-enabled EPEL is not reinstalled' 'epel-release' \
+    "$(cat "$EB/log" 2>/dev/null)"
+
+# DOT_NO_EPEL=1 必须真的关掉（离线环境、或公司镜像已自带这些包）
+rm -f "$EB/mark"
+: >"$EB/log"
+env EPEL_LOG="$EB/log" EPEL_MARK="$EB/mark" DOT_NO_EPEL=1 \
+    DOT_PKG=yum DOT_DISTRO=rhel DOT_LIB_DIR="$DOT_REPO/lib" \
+    PATH="$EB/bin:/usr/bin:/bin" \
+    sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_install ripgrep" \
+    >/dev/null 2>&1
+expect_lacks 'DOT_NO_EPEL=1 skips EPEL entirely' 'epel-release' \
+    "$(cat "$EB/log" 2>/dev/null)"
+
+# dry-run 必须预告 EPEL，且在此之前不调用包管理器哪怕一次。
+#
+# 这条是手工测出来的 bug 变成的断言：最初 repolist 那个「已启用吗」的查询
+# 排在 dry-run 判断之前，于是 --dry-run 下包管理器仍被调用了一次。
+# repolist 虽然只读，但它读元数据缓存、可能触发网络，而 dry-run 的契约
+# 是零调用。顺带：dry-run 分支原本写在平台层的安装函数里，而 pkg.sh 的
+# dry-run 在更早就短路返回了 —— 那段代码根本不可达，等于没写。
+rm -f "$EB/mark"
+: >"$EB/log"
+dry_out=$(env EPEL_LOG="$EB/log" EPEL_MARK="$EB/mark" DOT_DRY_RUN=1 \
+    DOT_PKG=yum DOT_DISTRO=rhel DOT_LIB_DIR="$DOT_REPO/lib" \
+    PATH="$EB/bin:/usr/bin:/bin" \
+    sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_prepare_repos" 2>&1)
+expect_has 'dry-run previews the EPEL change' 'would enable EPEL' "$dry_out"
+expect 'dry-run calls the package manager zero times' '' \
+    "$(cat "$EB/log" 2>/dev/null)"
+
+# 走完整引导也要满足同一条契约（上面测的是平台层函数，这里测端到端）。
+#
+# 注意用 DOT_DISTRO_OVERRIDE 而不是 DOT_DISTRO —— 端到端会跑 dot_detect，
+# 它按 os-release 重新探测并覆盖 DOT_DISTRO，于是直接传 DOT_DISTRO=rhel
+# 会变成 unknown、EPEL 分支被跳过（第一次就是这么写错的）。
+# 平台层用例不跑 dot_detect，所以那里传 DOT_DISTRO 是有效的。
+: >"$EB/log"
+rm -f "$EB/mark"
+mkdir -p "$EB/cfg/cli" "$EB/home"
+printf '%s\n' 'ripgrep|all|default||test' >"$EB/cfg/cli/tools.txt"
+boot_dry=$(env EPEL_LOG="$EB/log" EPEL_MARK="$EB/mark" \
+    DOT_OS=linux DOT_DISTRO_OVERRIDE=rhel DOT_PKG_OVERRIDE=yum \
+    DOT_CONFIG_DIR="$EB/cfg" HOME="$EB/home" \
+    PATH="$EB/bin:/usr/bin:/bin" \
+    sh "$BOOT" --dry-run --only modern-cli 2>&1)
+expect 'a dry-run bootstrap never invokes the package manager' '' \
+    "$(cat "$EB/log" 2>/dev/null)"
+# 也必须真的把 EPEL 计划打出来 —— 否则「零调用」可以靠压根不走这段来满足，
+# 而那样用户就看不到这个会改系统仓库的动作了。
+expect_has 'a dry-run bootstrap still previews the EPEL change' \
+    'would enable EPEL' "$boot_dry"
+
+printf '\n== starship has a route that does not require compiling ==\n'
+# starship 是 essential，而它在任何 RHEL 仓库里都没有。只声明 cargo 回退
+# 会让 CentOS 7 那种机器要么装 600MB 工具链现场编译、要么引导直接失败。
+# 官方 install.sh 拉的是预编译二进制，所以必须排在 cargo 之前。
+starship_fb=$(grep '^starship|' "$REAL" | cut -d'|' -f4)
+expect_has 'starship declares the official script fallback' 'script:' "$starship_fb"
+case $starship_fb in
+    script:*cargo:*)
+        _pass=$((_pass + 1))
+        printf 'ok   the script fallback comes before cargo\n'
+        ;;
+    *)
+        _fail=$((_fail + 1))
+        printf 'FAIL script fallback must come before cargo (got: %s)\n' "$starship_fb"
+        ;;
+esac
 
 printf '\n---------------------------------\n'
 printf 'passed: %s  failed: %s\n' "$_pass" "$_fail"

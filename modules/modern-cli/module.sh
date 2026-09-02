@@ -27,6 +27,12 @@ install() {
     _dot_cli_ok=0
     _dot_cli_skipped=0
     _dot_cli_failed=''
+    _dot_cli_failed_essential=''
+
+    # 仓库准备（RHEL 族的 EPEL）要在循环之前做一次，而不是每装一个包都判一次。
+    # 放在这里而不是平台层的安装函数里，是为了让 dry-run 也能预告 ——
+    # 启用 EPEL 会改系统仓库配置，属于用户该提前知道的副作用。
+    dot_pkg_prepare_repos
 
     # 清单先读进变量，再用 here-doc 喂给循环。
     #
@@ -44,8 +50,21 @@ install() {
         if [ -z "$_dot_cli_plat" ] || [ -z "$_dot_cli_tag" ]; then
             dot_error "malformed manifest line for '$_dot_cli_name' (need name|platforms|tag|fallback|desc)"
             _dot_cli_failed="$_dot_cli_failed $_dot_cli_name"
+            _dot_cli_failed_essential="$_dot_cli_failed_essential $_dot_cli_name"
             continue
         fi
+
+        # 未知标签必须报错而不是默默当成 default —— 打错字（"defualt"）
+        # 会让工具静静地不被安装，那是最难发现的一类问题。
+        case $_dot_cli_tag in
+            essential | default | optional) ;;
+            *)
+                dot_error "unknown tag '$_dot_cli_tag' for '$_dot_cli_name' (want essential/default/optional)"
+                _dot_cli_failed="$_dot_cli_failed $_dot_cli_name"
+                _dot_cli_failed_essential="$_dot_cli_failed_essential $_dot_cli_name"
+                continue
+                ;;
+        esac
 
         # 平台筛选。all 是三平台的简写。
         if [ "$_dot_cli_plat" != all ] && ! _dot_cli_in "$DOT_OS" "$_dot_cli_plat"; then
@@ -67,6 +86,8 @@ install() {
         else
             # 单个工具装不上不中断其余 —— 一个仓库缺包不该让整条工具链失败
             _dot_cli_failed="$_dot_cli_failed $_dot_cli_name"
+            [ "$_dot_cli_tag" = essential ] &&
+                _dot_cli_failed_essential="$_dot_cli_failed_essential $_dot_cli_name"
         fi
     done <<EOF
 $_dot_cli_lines
@@ -76,10 +97,26 @@ EOF
 
     _dot_cli_stale_check
 
+    # 装不上的工具分两类看待。
+    #
+    # 之前这里对任何失败都 return 1，而紧随其后的提示却说「这些工具对其余
+    # 部分是可选的、shell 配置会优雅降级」—— 自相矛盾：既然可选，为什么
+    # 让整个引导非零退出？在包源贫乏的发行版上这个矛盾很致命：
+    # RHEL/CentOS 7 的仓库里没有 eza/lazygit/gh/yq，于是引导永远失败，
+    # 即使 zsh、git、字体、密钥全都装好了。
+    #
+    # 现在只有 essential 的工具失败才让模块失败。
     if [ -n "$_dot_cli_failed" ]; then
-        dot_error "could not install:$_dot_cli_failed"
-        dot_tip 'these tools are optional to the rest of the setup; shell config degrades gracefully'
-        return 1
+        if [ -n "$_dot_cli_failed_essential" ]; then
+            dot_error "could not install:$_dot_cli_failed"
+            dot_error "  essential:$_dot_cli_failed_essential"
+            dot_tip 'the rest degrade gracefully, but essential tools should be fixed'
+            return 1
+        fi
+
+        dot_tip "could not install:$_dot_cli_failed"
+        dot_tip 'none of these are essential — shell config degrades gracefully'
+        dot_tip '  they are absent from your package repos; a source build is the only route'
     fi
 }
 

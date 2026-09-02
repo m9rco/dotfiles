@@ -84,6 +84,28 @@ DOT_WANT_OLLAMA=1 ./bootstrap.sh --only secrets          # 本地推理，体积
 `xh`（HTTP 客户端）、`sd`（sed 替代）、`atuin`（历史加强版）。
 完整清单见 `config/cli/tools.txt`。
 
+### 包源贫乏的发行版
+
+RHEL / CentOS 的 base 仓库里没有多数现代 CLI 工具，所以在 `DOT_DISTRO=rhel`
+上引导会先自动启用 **EPEL**（Fedora 项目维护的附加仓库，RHEL 生态的事实
+标准）。启用后 ripgrep、fd、bat、zoxide、delta、direnv、duf 都能直装。
+
+仍有几个工具（`eza` `lazygit` `gh` `yq`）在任何 RHEL 仓库里都没有。它们
+装不上只告警、不影响退出码 —— shell 配置对缺失工具已做优雅降级。只有标为
+`essential` 的工具（目前只有 `starship`，因为它是 prompt）失败才会让模块
+失败，而 starship 有官方安装脚本兜底，拉的是预编译二进制。
+
+两个开关：
+
+```sh
+DOT_NO_EPEL=1   ./bootstrap.sh    # 不动系统仓库（离线，或内部镜像已自带这些包）
+DOT_NO_RUSTUP=1 ./bootstrap.sh    # 不为源码编译安装 Rust 工具链（约 600MB）
+```
+
+默认行为是缺 cargo 时装 rustup，因为那是 `eza` 这类工具在老发行版上的唯一
+出路。代价是工具链约 600MB、且之后每个工具都要现场编译 —— 小机器上可能
+几十分钟。不想付这个代价就设 `DOT_NO_RUSTUP=1`，装不上的工具会被明确列出。
+
 ## 目录结构
 
 ```

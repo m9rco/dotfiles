@@ -102,6 +102,8 @@ font-provisioning|预演模式不下载|modules/fonts|test:fonts_test.sh
 modern-cli-toolchain|声明式工具清单|config/cli/tools.txt|test:cli_test.sh
 modern-cli-toolchain|默认工具集|config/cli/tools.txt|test:cli_test.sh
 modern-cli-toolchain|包管理器不可用时的回退|lib/pkg.sh|test:cli_test.sh
+modern-cli-toolchain|附加仓库的启用|platform/linux.sh|test:cli_test.sh
+modern-cli-toolchain|工具失败的致命性分级|modules/modern-cli|test:cli_test.sh
 modern-cli-toolchain|工具安装幂等|lib/pkg.sh|test:cli_test.sh
 modern-cli-toolchain|shell 集成 hook|config/zsh/zshrc.d/30-tools.zsh|manual:zoxide/fzf 实测生效
 modern-cli-toolchain|别名与传统命令共存|config/zsh/zshrc.d/40-aliases.zsh|manual:仅交互式生效，脚本用原命令
@@ -294,7 +296,7 @@ printf 'covered: %s / %s\n' "$covered" "$total"
 # 零条需求当然「全部被覆盖」。归档时就实际踩到了：delta spec 被提升成主 spec、
 # change 目录移走，这里读到空目录，覆盖度检查静默失效而 CI 依旧全绿。
 # 断言真实存在的数量，让「读不到 spec」表现为失败而不是满分。
-MIN_REQUIREMENTS=85
+MIN_REQUIREMENTS=87
 if [ "$total" -lt "$MIN_REQUIREMENTS" ]; then
     printf 'FAILED: only %s requirements found in %s, expected at least %s\n' \
         "$total" "$SPEC_DIR" "$MIN_REQUIREMENTS"

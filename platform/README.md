@@ -23,3 +23,9 @@
 - RHEL 族的包名对 `dnf` 与 `yum` 是同一套，映射表里两者总是并列（`dnf | yum`）。
   漏写 `yum` 不会报错 —— 映射返回空串，回退链当作「仓库里没这个包」转去 cargo
   现场编译。`test/lint.sh` 有一条交叉断言拦这个。
+- 「包名一致」不等于「可用性一致」：`github-cli` 在 Fedora 仓库里有，
+  RHEL/CentOS 的 base 与 EPEL 都没有。这类刻意的例外用 `# yum-differs:`
+  注释标注 —— 要求写注释而不是默许，是为了区分「想清楚了」和「忘了加」。
+- RHEL 族安装前会自动启用 EPEL：base 仓库里没有 ripgrep/fd/bat/zoxide/
+  delta/direnv/duf，不启用的话默认集 14 个有 7 个装不到。
+  `DOT_NO_EPEL=1` 可关掉（离线环境、或内部镜像已自带这些包）。

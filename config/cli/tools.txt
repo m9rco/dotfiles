@@ -6,9 +6,20 @@
 # 新增工具只需加一行，安装逻辑不用改。
 #
 # 平台：macos / linux / windows，空格分隔；all 表示三平台都装。
-# 标签：default = 默认安装；optional = 需显式选择。
+# 标签：essential = 默认安装，且装不上则模块失败
+#       default   = 默认安装，装不上只告警（shell 配置会优雅降级）
+#       optional  = 需显式选择
 # 回退方式：包管理器里没有时依次尝试，形如 cargo:crate / npm:pkg / script:URL。
 #           留空表示只走包管理器，装不上就报失败。
+#
+# 关于 essential 与 default 的界线：
+# 所有工具在 zshrc.d 里都做了「存在才启用」，所以没有一个是缺了 shell 就坏。
+# 区别在于装不上的损失：starship 是 prompt，缺了外观立刻退化，而且它是
+# zsh 与 PowerShell 共用同一份配置的那个点 —— 跨 shell 一致性的核心。
+# 其余工具缺了只是少个便利命令，不该让整台机器的引导以非零退出。
+#
+# 包源贫乏的发行版（RHEL/CentOS 7 最典型）上这个区分很实在：那里
+# eza/lazygit/gh/yq 在任何仓库里都没有，若它们算致命，引导永远失败。
 
 # ---------------------------------------------------------------- 搜索与浏览
 
@@ -35,7 +46,11 @@ yq|all|default||jq 之于 JSON，yq 之于 YAML/TOML/XML
 
 # ---------------------------------------------------------------- prompt
 
-starship|all|default|cargo:starship|跨 shell 的 prompt，zsh 与 PowerShell 共用 config/starship.toml
+# starship 的回退顺序刻意是「官方脚本 → cargo」而不是只有 cargo：
+# 官方 install.sh 拉的是预编译二进制，几秒就好；cargo 要现场编译，
+# 在 CentOS 7 那种机器上是几分钟外加一个 600MB 的工具链。
+# 它是 essential（缺了 prompt 立刻退化），所以更要给一条不依赖编译的路。
+starship|all|essential|script:https://starship.rs/install.sh cargo:starship|跨 shell 的 prompt，zsh 与 PowerShell 共用 config/starship.toml
 
 # ---------------------------------------------------------------- shell 环境
 #

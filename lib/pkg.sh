@@ -81,30 +81,128 @@ dot_pkg_installed() {
 
 # ---------------------------------------------------------------- 回退安装方式
 
+# cargo 工具链是否已尝试安装过（一次引导内只试一次）
+DOT_RUSTUP_TRIED=${DOT_RUSTUP_TRIED:-0}
+
+# 确保 cargo 可用，缺失时装 rustup。
+#
+# 为什么需要：包源贫乏的发行版（RHEL/CentOS 7 最典型）上，eza / starship /
+# dust 这类较新的 Rust 工具在任何仓库里都没有，唯一出路就是 cargo。
+# 而那些机器默认也没有 cargo，于是回退链形同虚设 —— 报告「tried 1 fallback
+# method」却从未真正尝试。
+#
+# 代价必须说清：rustup 工具链约 600MB，之后每个工具都是现场编译。
+# 默认集里有 15 个工具声明了 cargo 回退，在 2 核机器上全部编译实测
+# 需要 40–90 分钟。所以：
+#   - 安装前明确告知体积与耗时，不静默下载几百 MB
+#   - DOT_NO_RUSTUP=1 可完全关掉，只报告缺 cargo
+#   - 一次引导内只尝试一次，失败后不再重试
+_dot_pkg_ensure_cargo() {
+    command -v cargo >/dev/null 2>&1 && return 0
+    [ "$DOT_RUSTUP_TRIED" = 0 ] || return 1
+
+    DOT_RUSTUP_TRIED=1
+
+    if [ "${DOT_NO_RUSTUP:-0}" = 1 ]; then
+        dot_tip 'cargo not available and DOT_NO_RUSTUP=1; skipping source builds'
+        return 1
+    fi
+
+    command -v curl >/dev/null 2>&1 || {
+        dot_tip 'cargo not available and curl is missing; cannot bootstrap rustup'
+        return 1
+    }
+
+    dot_step 'installing the Rust toolchain — needed to build tools absent from your package repos'
+    dot_info '  this downloads ~600MB and later compiles each tool from source'
+    dot_info '  expect tens of minutes on a small machine; set DOT_NO_RUSTUP=1 to skip'
+
+    if curl -fsSL https://sh.rustup.rs |
+        sh -s -- -y --no-modify-path --profile minimal >/dev/null 2>&1; then
+        # rustup 装到 ~/.cargo/bin，当前 shell 的 PATH 还没有它
+        [ -d "$HOME/.cargo/bin" ] && PATH="$HOME/.cargo/bin:$PATH" && export PATH
+        if command -v cargo >/dev/null 2>&1; then
+            dot_success 'Rust toolchain installed'
+            return 0
+        fi
+    fi
+
+    dot_error 'could not install the Rust toolchain; source builds unavailable'
+    return 1
+}
+
 # cargo 安装。crate 名默认与逻辑名一致。
 _dot_pkg_try_cargo() {
-    command -v cargo >/dev/null 2>&1 || return 1
-    dot_info "installing $1 via cargo"
+    if ! _dot_pkg_ensure_cargo; then
+        # 明确说清为什么这条回退没走 —— 之前这里静默 return 1，
+        # 而上层照样报告「tried 1 fallback method(s)」，等于骗人。
+        dot_info "  cargo unavailable; cannot build $1 from source"
+        return 1
+    fi
+    dot_info "installing $1 via cargo (compiling from source, this is slow)"
     cargo install --locked "$1" >/dev/null 2>&1
 }
 
 # npm 全局安装。绝不使用 sudo —— 需要 sudo 说明 npm 前缀配置有问题，
 # 那应该修配置而不是提权。
 _dot_pkg_try_npm() {
-    command -v npm >/dev/null 2>&1 || return 1
+    command -v npm >/dev/null 2>&1 || {
+        dot_info "  npm not available; cannot install $1 that way"
+        return 1
+    }
     dot_info "installing $1 via npm"
     npm install --global "$1" >/dev/null 2>&1
 }
 
 # 官方安装脚本。仅用于明确声明了该方式的工具，脚本 URL 由调用方给出。
+#
+# 参数经 `sh -s --` 传给脚本本身。--yes 是必须的：多数官方安装脚本
+# （starship、rustup 都是）默认会交互式确认，而引导是无人值守的 ——
+# 不给它就会挂在等输入，或因 stdin 不是 tty 而以看不懂的方式失败。
+#
+# 装到 ~/.local/bin 而不是 /usr/local/bin：免提权，且与本仓库
+# 「不碰系统目录」的前提一致。
 _dot_pkg_try_script() {
     _dot_script_url=$1
-    command -v curl >/dev/null 2>&1 || return 1
+    command -v curl >/dev/null 2>&1 || {
+        dot_info '  curl not available; cannot run the install script'
+        return 1
+    }
     dot_info "installing via official script: $_dot_script_url"
-    curl -fsSL "$_dot_script_url" | sh >/dev/null 2>&1
+
+    _dot_script_bin="$HOME/.local/bin"
+    mkdir -p "$_dot_script_bin" 2>/dev/null || true
+
+    if curl -fsSL "$_dot_script_url" |
+        sh -s -- --yes --bin-dir "$_dot_script_bin" >/dev/null 2>&1; then
+        # 脚本装到 ~/.local/bin，当前 shell 的 PATH 可能还没有它。
+        # 不导出的话紧随其后的 dot_pkg_installed 判定会失败。
+        case ":$PATH:" in
+            *":$_dot_script_bin:"*) ;;
+            *) PATH="$_dot_script_bin:$PATH" && export PATH ;;
+        esac
+        return 0
+    fi
+
+    # 不接受 --bin-dir 的脚本用不带参数的方式再试一次 —— 各家脚本
+    # 的参数约定不统一，硬要求某个 flag 会把本来能用的路堵死。
+    curl -fsSL "$_dot_script_url" | sh -s -- --yes >/dev/null 2>&1
 }
 
 # ---------------------------------------------------------------- 入口
+
+# 在安装循环之前准备包仓库（目前只有 RHEL 族的 EPEL）。
+#
+# 单独暴露一个入口，而不是只在 dot_platform_pkg_install 里顺带做，
+# 是因为 dry-run 在本文件里就短路返回了，永远走不到平台层 ——
+# 而启用 EPEL 会改系统仓库配置，恰恰是 dry-run 最该预告的那类副作用。
+# 之前把 dry-run 分支写在平台层里，那段代码实际是不可达的死代码。
+#
+# 平台没有这个概念时静默跳过（macOS/Windows 都不需要）。
+dot_pkg_prepare_repos() {
+    command -v dot_platform_prepare_repos >/dev/null 2>&1 || return 0
+    dot_platform_prepare_repos
+}
 
 # dot_pkg_install <logical-name> [fallback-spec...]
 #
