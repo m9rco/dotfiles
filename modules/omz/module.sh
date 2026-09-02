@@ -17,7 +17,11 @@ MODULE_PLATFORMS="macos linux"
 MODULE_TAGS="core shell"
 # zsh 本体与 ~/.zshrc 要先就位：omz 装完即被下一次启动加载，
 # 而那份 zshrc 正是加载它的入口。
-MODULE_REQUIRES="zsh"
+#
+# git 也是硬依赖 —— 装 omz 与插件全靠 git clone。不声明它的后果不是
+# 顺序错乱（默认顺序里 git 本来就在前），而是 `--only omz` 在一台没有
+# git 的新机器上直接失败：--only 只会带上声明过的依赖，git 不在其中。
+MODULE_REQUIRES="zsh git"
 
 # 自定义插件清单。
 #

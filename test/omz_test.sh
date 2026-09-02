@@ -314,6 +314,14 @@ printf '\n== module metadata ==\n'
 
 MOD="$DOT_REPO/modules/omz/module.sh"
 ok_if 'omz declares a dependency on zsh' "grep -q 'MODULE_REQUIRES=.*zsh' '$MOD'"
+
+# git 是 clone 的前提，必须声明 —— 否则 `--only omz` 在没有 git 的机器上
+# 直接失败（--only 只带上声明过的依赖）。行为断言比 grep 更可靠：
+# 直接看 --only omz 的计划里有没有 git 模块。
+ok_if 'omz declares a dependency on git' "grep -q 'MODULE_REQUIRES=.*git' '$MOD'"
+plan=$(sh "$BOOT" --only omz --dry-run </dev/null 2>&1 | grep '^==> ')
+expect_has 'a --only omz run pulls in the git module' 'git' "$plan"
+expect_has 'a --only omz run pulls in the zsh module' 'zsh' "$plan"
 # omz 是 Unix 的东西；Windows 侧走 PowerShell profile，不该被列进来
 platforms=$(grep '^MODULE_PLATFORMS=' "$MOD" | cut -d'"' -f2)
 expect 'omz is macos+linux only' 'macos linux' "$platforms"
