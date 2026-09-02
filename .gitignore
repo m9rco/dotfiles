@@ -15,6 +15,10 @@ Thumbs.db
 .env.*
 !.env.example
 
+# 上面的 `*.local` 匹配不到 `settings.local.json` —— 它以 .json 结尾。
+# 这类文件是 AI 工具的本机权限白名单，逐机不同，同样不入库。
+settings.local.json
+
 # 但归档内容例外：legacy/ 是历史原样保留，里面的 zshrc.local 是旧配置的
 # 一部分而不是本机的本地覆盖。上面的 *.local 规则会把它排除掉，
 # 导致归档不完整 —— 这与「归档即原样」的前提冲突。

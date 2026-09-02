@@ -224,7 +224,7 @@ fi
 # 本地覆盖文件绝不能被仓库管理 —— 它们按设计是不入库的
 _tracked_local=''
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
-    for _pat in 'env.local' '.zshrc.local' '.gitconfig.local'; do
+    for _pat in 'env.local' '.zshrc.local' '.gitconfig.local' 'settings.local.json'; do
         if git ls-files --error-unmatch "*$_pat" >/dev/null 2>&1; then
             _tracked_local="$_tracked_local $_pat"
         fi
@@ -235,6 +235,29 @@ if [ -n "$_tracked_local" ]; then
     _rc=1
 else
     printf 'local override files are not tracked: ok\n'
+fi
+
+# openspec CLI 为每个 AI 工具各生成一份等价的 skill 定义。它们必须逐字节相同 ——
+# 否则同一个 /opsx:* 工作流在 Copilot 与 Claude Code 里行为不同，而这种漂移
+# 不报错：重新生成时只更新一侧就会发生，用户只会觉得「另一个工具怪怪的」。
+_skill_drift=''
+for _d in .github/skills/*/; do
+    [ -d "$_d" ] || continue
+    _name=${_d#.github/skills/}
+    _name=${_name%/}
+    _mirror=".claude/skills/$_name/SKILL.md"
+    if [ ! -f "$_mirror" ]; then
+        _skill_drift="$_skill_drift missing:$_mirror"
+    elif ! cmp -s "$_d/SKILL.md" "$_mirror"; then
+        _skill_drift="$_skill_drift differs:$_name"
+    fi
+done
+if [ -n "$_skill_drift" ]; then
+    printf 'FAILED: openspec skill copies drifted between AI tools:%s\n' "$_skill_drift"
+    printf '  regenerate both sides with the openspec CLI\n'
+    _rc=1
+else
+    printf 'openspec skill copies are identical across AI tools: ok\n'
 fi
 
 printf '\n'
