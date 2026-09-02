@@ -190,12 +190,21 @@ rm -f "$FIX/bin/alreadythere"
 printf '\n== platform filtering ==\n'
 # 显式钉住 DOT_OS —— 否则断言会随运行环境的平台而变
 # （本机 macOS 通过、Ubuntu runner 上全红）
+#
+# 还得放一个替身 brew：DOT_OS=macos 会让探测认定包管理器是 brew，
+# 而 brew 不存在时引导会真的去装 Homebrew —— 在 Linux 容器里那会失败并
+# 中断，于是清单一条都没处理（实测 Rocky 9）。macOS 上恰好不会，
+# 因为 brew 已经在了。这个用例只想测平台筛选，不该触发包管理器安装。
+# 不能用 DOT_BREW_PREFIX 环境变量 —— 探测函数开头会把它清空。
+printf '#!/bin/sh\nprintf "/opt/homebrew\\n"\n' >"$FIX/bin/brew"
+chmod +x "$FIX/bin/brew"
 MANIFEST="everywhere|all|default||all platforms
 thisplatform|macos|default||only for the pinned platform
 otherplatform|windows|default||not for the pinned platform"
 out=$(DOT_OS=macos runcli "$MANIFEST")
 expect 'only entries for the current platform install' 'everywhere thisplatform' "$(installed_log)"
 expect_has 'skipped entry states the platform' 'not for macos' "$out"
+rm -f "$FIX/bin/brew"
 
 # ------------------------------------------------------------------ optional
 
@@ -384,12 +393,19 @@ printf '\n== default shell handling ==\n'
 
 ZBIN="$FIX/zshbin"
 mkdir -p "$ZBIN"
-for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink cmp mv cp wc od dd sort uniq stty; do
+for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink mv cp wc od dd sort uniq stty; do
     if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$ZBIN/$t" 2>/dev/null || true; fi
 done
 # 替身 zsh 与 chsh
 printf '#!/bin/sh\nexit 0\n' >"$ZBIN/zsh"
 chmod +x "$ZBIN/zsh"
+# 替身包管理器。这组用例测的是 chsh 行为，不该依赖真实包管理器 ——
+# 而 PATH 被收窄成只有 $ZBIN 后，Linux 上的探测找不到任何包管理器就会
+# 直接报 "no supported package manager found" 并退出，三条断言全红。
+# macOS 上恰好不会：那里 DOT_PKG 直接设为 brew 且只标记 missing、不退出。
+# 实测 Rocky 9 容器就是这么红的，而 debian 容器碰巧过了。
+printf '#!/bin/sh\nexit 0\n' >"$ZBIN/apt-get"
+chmod +x "$ZBIN/apt-get"
 cat >"$ZBIN/chsh" <<'CHSH'
 #!/bin/sh
 printf 'chsh %s\n' "$*" >>"$DOT_TEST_CHSH_LOG"
@@ -421,9 +437,13 @@ expect 'already-zsh never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 # zsh 缺失时应尝试安装。用一个没有 zsh 的 PATH。
 NOZSH="$FIX/nozsh"
 mkdir -p "$NOZSH"
-for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink cmp mv cp wc od dd sort uniq stty; do
+for t in sh printf grep sed cat command mktemp rm mkdir chmod find ls date dirname basename tr cut head env uname id ln readlink mv cp wc od dd sort uniq stty; do
     if p=$(command -v "$t" 2>/dev/null); then ln -sf "$p" "$NOZSH/$t" 2>/dev/null || true; fi
 done
+# 替身包管理器，理由同上面的 $ZBIN —— PATH 只有替身目录时，
+# Linux 上找不到包管理器会直接退出，这条断言就永远拿不到输出。
+printf '#!/bin/sh\nexit 0\n' >"$NOZSH/apt-get"
+chmod +x "$NOZSH/apt-get"
 : >"$FIX/install.log"
 out=$(env -i HOME="$FIX/zhome2" PATH="$NOZSH" CI=1 \
     DOT_PLATFORM_DIR="$FIX/platform" DOT_TEST_LOG="$FIX/install.log" \
@@ -443,14 +463,10 @@ pkgname_under() {
         sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_name \"\$1\"" _ "$2" 2>/dev/null
 }
 
-# 包名对 dnf 与 yum 多数必须一致 —— RHEL 族是同一套包名。
+# 包名对 dnf 与 yum 必须一致 —— RHEL 族是同一套包名。
 # 逐个比对而不是抽查：漏一个的症状是静默走 cargo 编译，不报错。
-#
-# gh 是刻意的例外：github-cli 在 Fedora 仓库里有，RHEL/CentOS 的 base
-# 与 EPEL 都没有，所以 yum 侧返回空走回退。「包名一致」不等于
-# 「可用性一致」—— platform/linux.sh 里用 # yum-differs: 标注了这一点。
 mismatch=''
-for tool in fd bat rg delta eza lazygit starship zoxide atuin yq \
+for tool in fd bat rg delta eza lazygit starship zoxide atuin gh yq \
     dust procs xh sd tldr duf hyperfine btop htop direnv tmux \
     fzf jq git zsh curl unzip; do
     a=$(pkgname_under dnf "$tool")
@@ -459,9 +475,18 @@ for tool in fd bat rg delta eza lazygit starship zoxide atuin yq \
 done
 expect 'every tool maps to the same package name under dnf and yum' '' "$mismatch"
 
-# gh 的例外必须是「有意为之」而不是漂移，所以两侧的值都钉死
-expect 'gh maps to github-cli under dnf (Fedora has it)' 'github-cli' "$(pkgname_under dnf gh)"
-expect 'gh maps to nothing under yum (RHEL/EPEL lack it)' '' "$(pkgname_under yum gh)"
+# 以下包名全部在真实容器里查证过（Rocky 9 + EPEL 9、Fedora、Alpine），
+# 不是按命名习惯推测的。上一版这里三条都是错的：
+#   gh     -> 写成 github-cli，而 Fedora 与 Rocky 都叫 gh，
+#             那个名字两边都不存在，dnf 报 No match 后走回退、
+#             而 gh 没声明回退，直接失败
+#   yq     -> 返回空串走回退，可 EPEL 明明有，且 yq 也没声明回退
+#   direnv -> 当成各发行版都同名收录，但 RHEL 族 base 与 EPEL 都没有
+expect 'gh is named gh on RHEL-family, not github-cli' 'gh' "$(pkgname_under dnf gh)"
+expect 'gh is github-cli on Alpine' 'github-cli' "$(pkgname_under apk gh)"
+expect 'yq comes from EPEL on RHEL-family' 'yq' "$(pkgname_under yum yq)"
+expect 'direnv is absent from RHEL-family repos' '' "$(pkgname_under yum direnv)"
+expect 'direnv is available elsewhere' 'direnv' "$(pkgname_under apt direnv)"
 
 # 抽查两个有实际映射的，确认不是「两边都是空串所以相等」
 expect 'fd maps to fd-find under yum' 'fd-find' "$(pkgname_under yum fd)"

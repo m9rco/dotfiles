@@ -236,6 +236,41 @@ printf '\n== case 11: dot_write idempotence ==\n'
 )
 tally
 
+printf '\n== case 11b: dot_write idempotence without diffutils ==\n'
+#
+# 幂等判定不得依赖 cmp/diff —— 它们属于 diffutils，不是必装包。
+# rockylinux:9 的最小镜像里两个都没有，而 debian:stable-slim 里有 cmp，
+# 所以旧实现能在 debian 容器 job 里一路绿灯。
+# 缺 cmp 时 `cmp -s a b` 返回非零 → 被当成「内容不同」→ 每次都重写，
+# 幂等性在整个 RHEL 族上静默失效。实测 Rocky 9 就是这么发现的。
+#
+# 这里把 PATH 收窄到只有必需命令（刻意不含 cmp/diff）再验一次。
+(
+    sandbox
+    NODIFF="$HOME/nodiff-bin"
+    mkdir -p "$NODIFF"
+    for _c in sh printf cat mktemp rm mkdir chmod wc dirname date ls sed grep tr id find mv cp; do
+        _p=$(command -v "$_c" 2>/dev/null) && ln -sf "$_p" "$NODIFF/$_c"
+    done
+    ok_if 'the narrowed PATH really has no cmp' \
+        '! PATH="$NODIFF" command -v cmp >/dev/null 2>&1'
+
+    printf 'hello\n' | dot_write "$HOME/.config/nd/out.txt" >/dev/null 2>&1
+    before=$(ls -lT "$HOME/.config/nd/out.txt" 2>/dev/null ||
+        ls -l --time-style=full-iso "$HOME/.config/nd/out.txt")
+    out=$(printf 'hello\n' | PATH="$NODIFF" dot_write "$HOME/.config/nd/out.txt" 2>&1)
+    after=$(ls -lT "$HOME/.config/nd/out.txt" 2>/dev/null ||
+        ls -l --time-style=full-iso "$HOME/.config/nd/out.txt")
+    expect 'same content = no rewrite even without cmp' "$before" "$after"
+    ok_if 'still reports unchanged' 'printf "%s" "$out" | grep -q "unchanged"'
+    # 反面：内容不同时仍然要写
+    printf 'other\n' | PATH="$NODIFF" dot_write "$HOME/.config/nd/out.txt" >/dev/null 2>&1
+    expect 'different content still rewrites' 'other' "$(cat "$HOME/.config/nd/out.txt")"
+    cleanup
+    printf '%s %s\n' "$_pass" "$_fail" >"$DOT_SCORE"
+)
+tally
+
 printf '\n== case 12: dot_write honors explicit mode (secrets) ==\n'
 (
     sandbox

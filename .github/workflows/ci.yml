@@ -498,3 +498,103 @@ jobs:
             exit 1
           fi
           echo "backed up to: $found"
+
+  # ------------------------------------------------------------------ RHEL 族
+  #
+  # 真实的 RHEL 族验证。debian 容器覆盖不到 dnf/yum 与 EPEL 这条路径，
+  # 而那条路径上的包名只能靠实测 —— 按命名习惯推测会错，而且错得很安静：
+  # 包名写错时 dnf 报 "No match for argument"，代码把它当成「仓库里没这个包」
+  # 转去走回退链，症状与「包确实不存在」完全一样。
+  #
+  # 这个 job 是补写的，因为前一轮 yum 支持全靠替身 yum 验证，
+  # 而替身对 install 一律返回成功 —— 三处包名错误（gh 写成 github-cli、
+  # yq 该有却返回空、direnv 当成到处都有）在模拟环境里全部测不出来。
+  rhel-container:
+    name: real install on RHEL-family (dnf + EPEL)
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    steps:
+      - name: Install the bare minimum
+        run: dnf install -y -q git curl
+
+      - uses: actions/checkout@v4
+
+      - name: Trust the checkout directory
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$(pwd)"
+
+      - name: Detection identifies RHEL family
+        run: |
+          ./bootstrap.sh --info
+          ./bootstrap.sh --info | grep -qE '^DOT_DISTRO +rhel'
+          # Rocky 9 有 dnf，所以必须选 dnf 而不是 yum shim
+          ./bootstrap.sh --info | grep -qE '^DOT_PKG +dnf'
+
+      - name: Test suites pass here too
+        run: sh test/run_all.sh
+
+      - name: EPEL is enabled and the tools it provides install from the repo
+        run: |
+          set +e
+          out=$(./bootstrap.sh --only modern-cli 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+
+          # EPEL 必须被启用 —— base 仓库里没有这些工具
+          echo "$out" | grep -q 'EPEL' || {
+            echo 'expected EPEL to be enabled on a RHEL-family system'
+            exit 1
+          }
+
+          # 这些包在 Rocky 9 + EPEL 9 里确实存在（实测过），所以必须
+          # 从仓库装上，而不是退化成源码编译。任一走了回退都说明包名写错了。
+          for tool in ripgrep fd bat fzf zoxide delta jq yq gh tmux; do
+            echo "$out" | grep -qE "installed $tool via dnf" || {
+              echo "$tool should have installed from the repo (package name wrong?)"
+              exit 1
+            }
+          done
+
+          # starship 不在 RHEL 仓库里，走官方脚本（预编译二进制）
+          echo "$out" | grep -q 'installed starship via install script' || {
+            echo 'starship should have installed via its official script'
+            exit 1
+          }
+
+          # eza/lazygit/direnv 在 Rocky 9 的任何仓库里都没有 —— 装不上是
+          # 环境的真实约束，不该让引导失败
+          if [ "$rc" != 0 ]; then
+            echo "non-essential failures must not fail the module (exit $rc)"
+            exit 1
+          fi
+          echo "modern-cli succeeded on RHEL family (exit $rc)"
+
+      - name: EPEL is not re-enabled on a second run
+        run: |
+          out=$(./bootstrap.sh --only modern-cli 2>&1)
+          printf '%s\n' "$out"
+          # 已启用时不该再装 epel-release
+          if echo "$out" | grep -q 'enabling EPEL'; then
+            echo 'EPEL should not be enabled twice'
+            exit 1
+          fi
+
+      - name: DOT_NO_EPEL is honoured
+        run: |
+          # 换一个干净的 HOME，避免上一步装好的工具让判定失真
+          out=$(DOT_NO_EPEL=1 ./bootstrap.sh --dry-run --only modern-cli 2>&1)
+          printf '%s\n' "$out"
+          if echo "$out" | grep -qi 'would enable EPEL'; then
+            echo 'DOT_NO_EPEL=1 must skip EPEL entirely'
+            exit 1
+          fi
+
+      - name: Real install of zsh and git
+        run: |
+          ./bootstrap.sh --only zsh,git
+          test -L "$HOME/.zshrc" || { echo '.zshrc was not linked'; exit 1; }
+          command -v zsh >/dev/null || { echo 'zsh was not installed'; exit 1; }
+          zsh -i -c 'echo zsh starts cleanly' </dev/null

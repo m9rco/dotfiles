@@ -298,6 +298,30 @@ if [ -f platform/linux.sh ]; then
     fi
 fi
 
+# ---------------------------------------------------------------- 可移植性
+
+# 引导代码不得依赖 diffutils（cmp / diff）。它不是必装包 ——
+# rockylinux:9 的最小镜像里两个都没有，而 debian:stable-slim 里恰好有 cmp，
+# 所以这类依赖能在 debian 容器 job 里一路绿灯。
+#
+# 后果完全静默：cmp 缺失时 `cmp -s a b` 返回非零，被当成「内容不同」，
+# 于是 dot_write 每次都重写文件 —— 幂等性在整个 RHEL 族上失效，零错误输出。
+# lib/fs.sh 的 _dot_same_content 是替代方案。
+#
+# 只查引导会执行的代码；test/lint.sh 自己可以用 cmp（它只在 lint job 跑，
+# 那里必然有 diffutils）。
+_diffutils_dep=$(grep -nE '(^|[^_[:alnum:]-])(cmp|diff)[[:space:]]+-' \
+    lib/*.sh modules/*/module.sh platform/*.sh bin/* bootstrap.sh 2>/dev/null |
+    grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true)
+if [ -n "$_diffutils_dep" ]; then
+    printf 'FAILED: bootstrap code must not depend on diffutils (cmp/diff):\n'
+    printf '%s\n' "$_diffutils_dep" | sed 's/^/  /'
+    printf '  they are absent from minimal RHEL images; use _dot_same_content instead\n'
+    _rc=1
+else
+    printf 'no diffutils dependency in bootstrap code: ok\n'
+fi
+
 printf '\n'
 if [ "$_rc" = 0 ]; then
     printf 'lint: all checks passed\n'

@@ -87,6 +87,8 @@ dot_platform_pkg_name() {
         atuin)
             case $DOT_PKG in
                 pacman) printf 'atuin' ;;
+                # EPEL 9 收了 atuin（实测 Rocky 9）
+                dnf | yum) printf 'atuin' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -94,11 +96,13 @@ dot_platform_pkg_name() {
             case $DOT_PKG in
                 # apt 需要先加 GitHub 的仓库，这里返回空走回退链更可靠
                 apt) printf '' ;;
-                # yum-differs: github-cli 在 Fedora 官方仓库里有，但 RHEL/CentOS
-                # 的 base 与 EPEL 都没有 —— 那里要加 GitHub 自己的 yum 仓库。
-                # 所以 dnf（多为 Fedora）给包名，yum（RHEL/CentOS 7）返回空走回退。
-                # 「RHEL 族与 Fedora 包名一致」对包名成立，对可用性不成立。
-                dnf | pacman | apk) printf 'github-cli' ;;
+                # RHEL 族的包名是 gh 而不是 github-cli —— 实测 Fedora 与
+                # Rocky 9 + EPEL 都是 gh。上一版写 github-cli 是错的：
+                # 那个名字在两边都不存在，于是 dnf 报 "No match for argument"
+                # 然后走回退链、而 gh 没声明回退，直接失败。
+                dnf | yum) printf 'gh' ;;
+                # Arch 与 Alpine 才叫 github-cli（实测 alpine 确认）
+                pacman | apk) printf 'github-cli' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -106,6 +110,10 @@ dot_platform_pkg_name() {
             case $DOT_PKG in
                 pacman) printf 'go-yq' ;;
                 apk) printf 'yq' ;;
+                # EPEL 收了 yq（实测 Rocky 9 + EPEL 9 有）。此前这里返回空串
+                # 走回退，而 yq 没声明 cargo 回退，于是在 RHEL 上直接失败 ——
+                # 明明仓库里有。
+                dnf | yum) printf 'yq' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -115,6 +123,13 @@ dot_platform_pkg_name() {
         dust | procs | xh | sd)
             case $DOT_PKG in
                 pacman | apk) printf '%s' "$_dot_logical" ;;
+                # EPEL 9 只收了 procs，dust/xh/sd 都没有（实测 Rocky 9）
+                dnf | yum)
+                    case $_dot_logical in
+                        procs) printf 'procs' ;;
+                        *) printf '' ;;
+                    esac
+                    ;;
                 *) printf '' ;;
             esac
             ;;
@@ -134,11 +149,22 @@ dot_platform_pkg_name() {
         hyperfine)
             case $DOT_PKG in
                 pacman | apk) printf 'hyperfine' ;;
+                # EPEL 9 收了 hyperfine（实测 Rocky 9）
+                dnf | yum) printf 'hyperfine' ;;
                 *) printf '' ;;
             esac
             ;;
-        # btop / htop / direnv / tmux 在各发行版仓库里都同名且都收录了
-        btop | htop | direnv | tmux) printf '%s' "$_dot_logical" ;;
+        # direnv 在 apt/pacman/apk 里都同名收录，但 RHEL 族没有 ——
+        # base 与 EPEL 9 都查过，确实不在（实测 Rocky 9）。
+        # 返回空串走回退比让 dnf 报 "No match for argument" 干净。
+        direnv)
+            case $DOT_PKG in
+                dnf | yum) printf '' ;;
+                *) printf 'direnv' ;;
+            esac
+            ;;
+        # btop / htop / tmux 在各发行版仓库里都同名且都收录了
+        btop | htop | tmux) printf '%s' "$_dot_logical" ;;
         fzf | jq | git | zsh | curl | unzip) printf '%s' "$_dot_logical" ;;
         *) printf '%s' "$_dot_logical" ;;
     esac

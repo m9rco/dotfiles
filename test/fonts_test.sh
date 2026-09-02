@@ -132,8 +132,13 @@ runfonts() {
     # 必须清掉 headless 信号：字体模块声明了 MODULE_NEEDS_GUI，
     # 在 CI（CI=1）或 SSH 会话里会被 runner 跳过，那样所有安装断言都会失败。
     # 本地跑通、CI 全红就是这个原因 —— 本机没有 CI 变量。
+    #
+    # 容器标记也要指向不存在的路径。GitHub Actions 的 container job 里
+    # 没有 /.dockerenv，所以这一点长期没暴露；但用 docker run 在本地复现
+    # CI 时它存在，于是字体模块被整段跳过、20 条断言全红。
     DOT_CONFIG_DIR="$FIX/cfg" DOT_FONT_DIR="$_rf_fontdir" \
         CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+        DOT_CONTAINER_PROBE_FILES="$FIX/no-such-container-marker" \
         sh "$BOOT" --only fonts "$@" 2>&1
 }
 
@@ -145,6 +150,7 @@ rcfonts() {
     printf '%s\n' "$_rc_manifest" >"$FIX/cfg/fonts/fonts.txt"
     DOT_CONFIG_DIR="$FIX/cfg" DOT_FONT_DIR="$_rc_fontdir" \
         CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+        DOT_CONTAINER_PROBE_FILES="$FIX/no-such-container-marker" \
         sh "$BOOT" --only fonts "$@" >/dev/null 2>&1
     printf '%s' "$?"
 }
@@ -203,7 +209,17 @@ printf '\n== corrupt archive is rejected before extraction ==\n'
 D="$FIX/d6"
 out=$(runfonts "Broken|$BASE/broken.zip|Broken|" "$D")
 expect_has 'reports an invalid archive' 'not a valid zip archive' "$out"
-expect_has 'says what it actually got' 'HTML' "$out"
+# 诊断信息要说清拿到的是什么。有 file 命令时说 "HTML"，没有时退化成
+# 字节数 —— 两者都算合格，但必须有一个。
+# rockylinux:9 的最小镜像里没有 file（debian-slim 里有），
+# 所以只断言 HTML 会在 RHEL 容器上红。
+if printf '%s' "$out" | grep -qE 'HTML|[0-9]+ bytes'; then
+    _pass=$((_pass + 1))
+    printf 'ok   says what it actually got\n'
+else
+    _fail=$((_fail + 1))
+    printf 'FAIL says what it actually got (want HTML or a byte count)\n'
+fi
 ok_if 'nothing is written to the font dir' '[ ! -d "$D" ] || [ -z "$(ls -A "$D" 2>/dev/null)" ]'
 expect 'corrupt archive exits non-zero' 1 "$(rcfonts "Broken|$BASE/broken.zip|Broken|" "$FIX/d6b")"
 
@@ -267,6 +283,7 @@ out=$(DOT_CONFIG_DIR="$FIX/cfg" DOT_FONT_DIR="$D" \
     DOT_OS=linux DOT_PKG_OVERRIDE=apt \
     DOT_WSL_PROBE_FILES="$FIX/wsl-osrelease" \
     CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+    DOT_CONTAINER_PROBE_FILES="$FIX/no-such-container-marker" \
     sh "$BOOT" --only fonts 2>&1)
 expect_has 'WSL skips and explains why' 'must be installed on the Windows host' "$out"
 ok_if 'WSL installs nothing' '[ ! -d "$D" ] || [ -z "$(ls -A "$D" 2>/dev/null)" ]'
@@ -276,6 +293,7 @@ expect 'WSL skip is not a failure' 0 \
             DOT_OS=linux DOT_PKG_OVERRIDE=apt \
             DOT_WSL_PROBE_FILES="$FIX/wsl-osrelease" \
             CI= SSH_CONNECTION= SSH_TTY= SSH_CLIENT= \
+            DOT_CONTAINER_PROBE_FILES="$FIX/no-such-container-marker" \
             sh "$BOOT" --only fonts >/dev/null 2>&1
         printf '%s' "$?"
     )"

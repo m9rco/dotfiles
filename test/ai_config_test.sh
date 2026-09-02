@@ -171,7 +171,7 @@ cp "$BOX/home/.claude/.mcp.json" "$BOX/first.json"
 rm -f "$BOX/home/.claude/.mcp.json"
 boxrun >/dev/null
 ok_if 'same input renders byte-identical output' \
-    'cmp -s "$BOX/first.json" "$BOX/home/.claude/.mcp.json"'
+    '[ "$(cat "$BOX/first.json")" = "$(cat "$BOX/home/.claude/.mcp.json")" ]'
 rm -rf "$BOX"
 
 printf '\n== repo metadata is stripped from tool config ==\n'

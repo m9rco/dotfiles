@@ -149,6 +149,27 @@ dot_link() {
 
 # ---------------------------------------------------------------- 写文件
 
+# 两个文件内容是否相同。
+#
+# 刻意不用 cmp 或 diff：它们属于 diffutils，而 diffutils 不是必装包 ——
+# rockylinux:9 的最小镜像里两个都没有（debian:stable-slim 里恰好有 cmp，
+# 所以这个问题在 debian 容器 job 里测不出来）。
+#
+# 后果曾经很严重且完全静默：cmp 不存在时 `cmp -s a b` 返回非零，被当成
+# 「内容不同」，于是 dot_write 每次都重写文件 —— 幂等性在整个 RHEL 族上
+# 失效，而没有任何错误输出。实测 Rocky 9 上 fs_test 的「same content =
+# no rewrite」就是这么红的。
+#
+# 改用命令替换读取内容再比较字符串。局限是尾部换行会被 $() 剥掉，
+# 所以两边都剥、比较结果依然正确；本函数只用于配置文件这类小文本，
+# 不适合大文件或二进制，但那也不是 dot_write 的用途。
+_dot_same_content() {
+    [ -f "$1" ] && [ -f "$2" ] || return 1
+    # 先比字节数：不同就不必读内容，也避开读大文件
+    [ "$(wc -c <"$1")" = "$(wc -c <"$2")" ] || return 1
+    [ "$(cat "$1")" = "$(cat "$2")" ]
+}
+
 # 幂等写文件：内容相同则不动（避免无意义的 mtime 变更，也让"重复执行零变更"成立）。
 # 内容从 stdin 读入。
 dot_write() {
@@ -161,7 +182,7 @@ dot_write() {
     }
     cat >"$_dot_wr_tmp"
 
-    if [ -f "$_dot_wr_path" ] && cmp -s "$_dot_wr_tmp" "$_dot_wr_path"; then
+    if _dot_same_content "$_dot_wr_tmp" "$_dot_wr_path"; then
         rm -f "$_dot_wr_tmp"
         dot_skip "unchanged: $_dot_wr_path"
         return 0
