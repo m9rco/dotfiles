@@ -19,6 +19,10 @@ _dot_runner_lib=${DOT_LIB_DIR:-$(dirname -- "$0")}
 . "$_dot_runner_lib/log.sh"
 # shellcheck source=lib/fs.sh
 . "$_dot_runner_lib/fs.sh"
+# 下载原语。pkg.sh 经由 release.sh 也会 source 它，但 fonts 模块直接用
+# 这些函数，不该依赖「另一个 lib 恰好把它带进来」这种间接关系。
+# shellcheck source=lib/download.sh
+. "$_dot_runner_lib/download.sh"
 # shellcheck source=lib/pkg.sh
 . "$_dot_runner_lib/pkg.sh"
 

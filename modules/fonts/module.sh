@@ -175,71 +175,21 @@ _dot_font_present() {
     [ -n "$(find "$1" -maxdepth 1 -name "$2*" \( -name '*.ttf' -o -name '*.otf' \) 2>/dev/null | head -n 1)" ]
 }
 
-_dot_font_download() {
-    _dot_dl_url=$1
-    _dot_dl_out=$2
-
-    if command -v curl >/dev/null 2>&1; then
-        # -L 跟随重定向（latest/download 一定会重定向）
-        # -f 让 HTTP 错误码变成非零退出，否则错误页会被当成正常内容保存
-        curl -fsSL --retry 2 --connect-timeout 20 -o "$_dot_dl_out" "$_dot_dl_url" </dev/null
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q --tries=3 --timeout=20 -O "$_dot_dl_out" "$_dot_dl_url"
-    else
-        dot_error 'neither curl nor wget is available'
-        return 1
-    fi
-}
+# 下载、校验、解包这四个动作的实现已提升到 lib/download.sh —— release
+# 二进制回退（lib/release.sh）要用同一套，尤其是「代理返回 HTML 错误页」
+# 的识别：那是本模块踩出来的经验，不该在两处各写一遍。
+#
+# 这里保留原来的名字与签名，只把函数体换成一行委托，调用点因此不用动。
+_dot_font_download() { dot_dl_fetch "$1" "$2"; }
 
 # zip 的魔数是 PK\x03\x04。用 unzip -t 更彻底，但 unzip 不一定装了，
-# 所以先看魔数，有 unzip 时再做完整性测试。
-_dot_font_verify_zip() {
-    _dot_vz=$1
-
-    [ -s "$_dot_vz" ] || return 1
-
-    _dot_vz_magic=$(dd if="$_dot_vz" bs=2 count=1 2>/dev/null | od -An -c | tr -d ' \n')
-    case $_dot_vz_magic in
-        PK*) ;;
-        *) return 1 ;;
-    esac
-
-    if command -v unzip >/dev/null 2>&1; then
-        unzip -tqq "$_dot_vz" >/dev/null 2>&1 || return 1
-    fi
-}
+# 所以先看魔数，有 unzip 时再做完整性测试 —— 判断都在 dot_dl_verify 里。
+_dot_font_verify_zip() { dot_dl_verify "$1" zip; }
 
 # 出错时说明拿到的是什么，便于诊断（常见情形：代理返回 HTML 登录页）
-_dot_font_describe() {
-    if command -v file >/dev/null 2>&1; then
-        file -b "$1" 2>/dev/null | head -c 80
-    else
-        printf '%s bytes' "$(wc -c <"$1" | tr -d ' ')"
-    fi
-}
+_dot_font_describe() { dot_dl_describe "$1"; }
 
-_dot_font_unzip() {
-    _dot_uz_zip=$1
-    _dot_uz_dst=$2
-
-    mkdir -p "$_dot_uz_dst" || return 1
-
-    if command -v unzip >/dev/null 2>&1; then
-        unzip -qo "$_dot_uz_zip" -d "$_dot_uz_dst" >/dev/null 2>&1
-    elif command -v bsdtar >/dev/null 2>&1; then
-        bsdtar -xf "$_dot_uz_zip" -C "$_dot_uz_dst" >/dev/null 2>&1
-    elif command -v python3 >/dev/null 2>&1; then
-        # 兜底：最小容器里可能既没 unzip 也没 bsdtar，但通常有 python3
-        python3 -c "
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1]) as z:
-    z.extractall(sys.argv[2])
-" "$_dot_uz_zip" "$_dot_uz_dst" >/dev/null 2>&1
-    else
-        dot_error 'no extraction tool available (need unzip, bsdtar or python3)'
-        return 1
-    fi
-}
+_dot_font_unzip() { dot_dl_unzip "$1" "$2"; }
 
 # 复制字体文件，回显复制了多少个。
 # Nerd Fonts 的包里同时有普通版与 "Windows Compatible" 版，后者只是文件名
