@@ -396,8 +396,13 @@ jobs:
 
       - name: modern-cli degrades gracefully
         run: |
-          # 装不上的工具必须被逐个点名、其余照常装上、模块以非零退出。
-          # 这三点合起来才叫「优雅降级」——只报一句「失败」是不够的。
+          # 装不上的工具必须被逐个点名、其余照常装上、且不因此让引导失败。
+          #
+          # 最后这点是刻意的语义：上面那步的注释已经承认「那几个装不上是
+          # 环境的真实约束，不是缺陷」，那就不该让整台机器的引导非零退出。
+          # 现在只有 essential 工具（目前只有 starship，因为它是 prompt）
+          # 失败才致命，而 starship 有官方脚本兜底、拉预编译二进制，
+          # 容器里装了 curl 所以它应该装上。
           set +e
           out=$(./bootstrap.sh --only modern-cli 2>&1)
           rc=$?
@@ -410,16 +415,47 @@ jobs:
             exit 1
           }
           # 失败的工具必须被点名
-          echo "$out" | grep -q 'could not install:' || {
+          echo "$out" | grep -q 'could not install' || {
             echo 'expected the unavailable tools to be named'
             exit 1
           }
-          # 有失败就必须非零退出
-          if [ "$rc" = 0 ]; then
-            echo 'partial failure must exit non-zero'
+          # 非必需工具装不上不该影响退出码
+          if [ "$rc" != 0 ]; then
+            echo "non-essential failures must not fail the module (exit $rc)"
+            echo 'if an essential tool genuinely failed, the output above names it'
             exit 1
           fi
-          echo "modern-cli degraded gracefully (exit $rc)"
+          # starship 是 essential，必须真的装上了（走官方脚本）
+          command -v starship >/dev/null || {
+            echo 'starship is essential and should have installed via its official script'
+            exit 1
+          }
+          echo "modern-cli degraded gracefully (exit $rc, starship present)"
+
+      - name: an essential failure does fail the module
+        run: |
+          # 反面用例：把一个必然装不上的工具标成 essential，模块必须失败。
+          # 没有这条，上一步的「退出码 0」可以靠「永远不失败」来满足 ——
+          # 那就把致命性分级测成了空壳。
+          tmp=$(mktemp -d)
+          mkdir -p "$tmp/cli"
+          cp -r config/* "$tmp/" 2>/dev/null || true
+          printf '%s\n' 'definitely-not-a-real-package|all|essential||canary' \
+            >"$tmp/cli/tools.txt"
+          set +e
+          out=$(DOT_CONFIG_DIR="$tmp" ./bootstrap.sh --only modern-cli 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$rc" = 0 ]; then
+            echo 'an essential tool failing must make the module fail'
+            exit 1
+          fi
+          echo "$out" | grep -q 'essential:' || {
+            echo 'the output must single out which tools were essential'
+            exit 1
+          }
+          echo "essential failures are fatal (exit $rc)"
 
       - name: Installed state is correct
         run: |
