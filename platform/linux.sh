@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 #
-# Linux 平台适配（含 WSL）。apt / dnf / pacman / apk / zypper 的差异全部收敛在这里。
+# Linux 平台适配（含 WSL）。apt / dnf / yum / pacman / apk / zypper 的差异全部收敛在这里。
+#
+# 关于 dnf 与 yum：包名在 RHEL 族里是同一套，所以两者在下面的映射表里
+# 总是并列出现（`dnf | yum`）。刻意不把 yum 折叠成 dnf 的别名 —— 那样
+# --info 会报 dnf 而实际跑的是 yum，排障时误导人。
+# test/lint.sh 有一条交叉断言保证这张表里不出现「只有 dnf 没有 yum」的分支。
 #
 # shellcheck shell=sh
 
@@ -23,7 +28,7 @@ dot_platform_pkg_name() {
             case $DOT_PKG in
                 # Debian/Ubuntu 的包叫 fd-find，可执行文件是 fdfind
                 apt) printf 'fd-find' ;;
-                dnf) printf 'fd-find' ;;
+                dnf | yum) printf 'fd-find' ;;
                 pacman | apk) printf 'fd' ;;
                 *) printf 'fd' ;;
             esac
@@ -31,7 +36,7 @@ dot_platform_pkg_name() {
         bat)
             case $DOT_PKG in
                 # Debian 的包是 bat，但旧版里可执行文件叫 batcat
-                apt | dnf | pacman | apk) printf 'bat' ;;
+                apt | dnf | yum | pacman | apk) printf 'bat' ;;
                 *) printf 'bat' ;;
             esac
             ;;
@@ -40,7 +45,7 @@ dot_platform_pkg_name() {
             case $DOT_PKG in
                 # apt 仓库里没有 git-delta（Debian 13 起才有），走回退链
                 apt) printf '' ;;
-                dnf) printf 'git-delta' ;;
+                dnf | yum) printf 'git-delta' ;;
                 pacman) printf 'git-delta' ;;
                 apk) printf 'delta' ;;
                 *) printf '' ;;
@@ -70,7 +75,7 @@ dot_platform_pkg_name() {
             ;;
         zoxide)
             case $DOT_PKG in
-                apt | dnf | pacman | apk) printf 'zoxide' ;;
+                apt | dnf | yum | pacman | apk) printf 'zoxide' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -84,7 +89,7 @@ dot_platform_pkg_name() {
             case $DOT_PKG in
                 # apt 需要先加 GitHub 的仓库，这里返回空走回退链更可靠
                 apt) printf '' ;;
-                dnf | pacman | apk) printf 'github-cli' ;;
+                dnf | yum | pacman | apk) printf 'github-cli' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -113,7 +118,7 @@ dot_platform_pkg_name() {
             ;;
         duf)
             case $DOT_PKG in
-                apt | dnf | pacman | apk) printf 'duf' ;;
+                apt | dnf | yum | pacman | apk) printf 'duf' ;;
                 *) printf '' ;;
             esac
             ;;
@@ -159,6 +164,10 @@ dot_platform_pkg_install() {
             DEBIAN_FRONTEND=noninteractive _dot_sudo apt-get install -y -qq "$_dot_pkg"
             ;;
         dnf) _dot_sudo dnf install -y "$_dot_pkg" ;;
+        # yum 的 install -y 与 dnf 同义。分开写而不合并成一条 ——
+        # 命令名必须与探测到的 DOT_PKG 一致，否则在只有 yum 的机器上
+        # （RHEL/CentOS 7、Amazon Linux 2）会去调不存在的 dnf。
+        yum) _dot_sudo yum install -y "$_dot_pkg" ;;
         pacman) _dot_sudo pacman -S --needed --noconfirm "$_dot_pkg" ;;
         apk) _dot_sudo apk add --no-cache "$_dot_pkg" ;;
         zypper) _dot_sudo zypper install -y "$_dot_pkg" ;;

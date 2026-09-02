@@ -61,6 +61,12 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 - **WHEN** `/etc/os-release` 中 `ID=linuxmint` 且 `ID_LIKE="ubuntu debian"`
 - **THEN** `DOT_DISTRO` 等于 `ubuntu`
 
+#### Scenario: Amazon Linux 归入 RHEL 族
+
+- **WHEN** `/etc/os-release` 中 `ID=amzn`
+- **THEN** `DOT_DISTRO` 等于 `rhel`
+- **AND** 包名映射沿用 RHEL 族的一套（差别只在包管理器命令）
+
 #### Scenario: os-release 缺失
 
 - **WHEN** `/etc/os-release` 不存在
@@ -69,7 +75,7 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 
 ### Requirement: 包管理器识别
 
-系统 SHALL 识别可用的包管理器并导出 `DOT_PKG`，取值限定为 `brew`、`apt`、`dnf`、`pacman`、`apk`、`winget`、`scoop` 之一。macOS 上 MUST 优先选 `brew`；Linux 上 MUST 按发行版选择对应管理器，若 Homebrew/Linuxbrew 存在则 MAY 优先用于无系统包的工具；Windows 上 CLI 工具 MUST 优先 `scoop`、系统级应用 MUST 用 `winget`。当目标平台上找不到任何受支持的包管理器时，系统 MUST 报错终止。
+系统 SHALL 识别可用的包管理器并导出 `DOT_PKG`，取值限定为 `brew`、`apt`、`dnf`、`yum`、`pacman`、`apk`、`zypper`、`winget`、`scoop` 之一。macOS 上 MUST 优先选 `brew`；Linux 上 MUST 按发行版选择对应管理器，RHEL 族 MUST 优先 `dnf`、仅在 `dnf` 不存在时选 `yum`（覆盖 RHEL/CentOS 7 与 Amazon Linux 2），若 Homebrew/Linuxbrew 存在则 MAY 优先用于无系统包的工具；Windows 上 CLI 工具 MUST 优先 `scoop`、系统级应用 MUST 用 `winget`。当目标平台上找不到任何受支持的包管理器时，系统 MUST 报错终止。
 
 #### Scenario: macOS 选择 brew
 
@@ -92,9 +98,26 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 - **WHEN** `DOT_DISTRO` 为 `arch`
 - **THEN** `DOT_PKG` 等于 `pacman`
 
+#### Scenario: RHEL 族两者都在时优先 dnf
+
+- **WHEN** `DOT_DISTRO` 为 `rhel` 或 `fedora` 且 `dnf` 与 `yum` 都存在
+- **THEN** `DOT_PKG` 等于 `dnf`
+
+#### Scenario: 只有 yum 的 RHEL 族选择 yum
+
+- **WHEN** `DOT_DISTRO` 为 `rhel` 或 `fedora` 且 `dnf` 不存在但 `yum` 存在
+- **THEN** `DOT_PKG` 等于 `yum`
+- **AND** 安装动作 MUST 调用 `yum` 而非 `dnf`
+
+#### Scenario: dnf 与 yum 的包名映射一致
+
+- **WHEN** 同一个逻辑工具名分别在 `DOT_PKG=dnf` 与 `DOT_PKG=yum` 下查询包名
+- **THEN** 两者返回相同的包名
+- **AND** 不得出现只映射 `dnf` 而 `yum` 返回空串的情形（否则会静默退化为源码编译）
+
 #### Scenario: 无受支持的包管理器
 
-- **WHEN** `DOT_OS` 为 `linux` 且 `apt`、`dnf`、`pacman`、`apk`、`brew` 均不可用
+- **WHEN** `DOT_OS` 为 `linux` 且 `apt`、`dnf`、`yum`、`pacman`、`apk`、`brew` 均不可用
 - **THEN** 系统输出 `no supported package manager found` 并以退出码 `1` 终止
 
 ### Requirement: Homebrew 前缀探测

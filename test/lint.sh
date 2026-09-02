@@ -260,6 +260,31 @@ else
     printf 'openspec skill copies are identical across AI tools: ok\n'
 fi
 
+# ---------------------------------------------------------------- 包名映射完整性
+
+# RHEL 族的包名对 dnf 与 yum 是同一套，所以包名映射表里每个 dnf 分支都必须
+# 同时列上 yum。漏一个不会报错 —— dot_platform_pkg_name 返回空串，pkg.sh
+# 当作「仓库里没这个包」转去走 cargo 回退，于是在只有 yum 的机器上
+# （RHEL/CentOS 7、Amazon Linux 2）本可 yum 直装的工具变成现场编译，
+# 慢几十倍且可能因缺 toolchain 失败。症状与「包确实不存在」无法区分。
+#
+# 只查 dot_platform_pkg_name 函数体：dot_platform_pkg_install 里的
+# `dnf)` 分支是安装命令，必须与 yum 分开（命令名不同），不适用此规则。
+if [ -f platform/linux.sh ]; then
+    _pkgname_body=$(sed -n '/^dot_platform_pkg_name()/,/^}/p' platform/linux.sh)
+    _bare_dnf=$(printf '%s\n' "$_pkgname_body" |
+        grep -n 'dnf' | grep -v 'yum' || true)
+    if [ -n "$_bare_dnf" ]; then
+        printf 'FAILED: dot_platform_pkg_name has dnf branches missing yum:\n'
+        printf '%s\n' "$_bare_dnf" | sed 's/^/  /'
+        printf '  RHEL-family package names are identical for dnf and yum — list both,\n'
+        printf '  or yum-only machines silently fall back to compiling from source.\n'
+        _rc=1
+    else
+        printf 'every dnf package-name branch also covers yum: ok\n'
+    fi
+fi
+
 printf '\n'
 if [ "$_rc" = 0 ]; then
     printf 'lint: all checks passed\n'

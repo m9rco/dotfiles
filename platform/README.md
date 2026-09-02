@@ -5,7 +5,7 @@
 | 文件 | 平台 |
 |---|---|
 | `macos.sh` | macOS —— Homebrew、`~/Library/Fonts` |
-| `linux.sh` | Linux / WSL —— apt / dnf / pacman / apk、`~/.local/share/fonts` + `fc-cache` |
+| `linux.sh` | Linux / WSL —— apt / dnf / yum / pacman / apk / zypper、`~/.local/share/fonts` + `fc-cache` |
 | `windows.ps1` | Windows 原生 —— scoop 优先 / winget 兜底、用户字体注册表、PowerShell profile 路径 |
 
 ## 每个平台文件需要提供
@@ -20,3 +20,6 @@
 - 模块只调 `dot_pkg_install ripgrep`，不关心背后是 brew 还是 apt。
 - 逻辑名到包名的映射表放在这里，不放在模块或清单里 —— 清单只出现跨平台的逻辑名。
 - 某工具在本平台不可用时，映射返回空，由 `lib/pkg.sh` 走回退安装链。
+- RHEL 族的包名对 `dnf` 与 `yum` 是同一套，映射表里两者总是并列（`dnf | yum`）。
+  漏写 `yum` 不会报错 —— 映射返回空串，回退链当作「仓库里没这个包」转去 cargo
+  现场编译。`test/lint.sh` 有一条交叉断言拦这个。

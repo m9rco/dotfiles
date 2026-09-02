@@ -84,6 +84,16 @@ f=$(mkosrelease rocky 'ID=rocky' 'ID_LIKE="rhel centos fedora"')
 expect 'ID=rocky -> rhel' rhel \
     "$(probe DOT_DISTRO DOT_OS=linux DOT_OSRELEASE_FILE="$f" DOT_PKG_OVERRIDE=dnf)"
 
+# Amazon Linux 2 只有 yum。归入 rhel 族因为包名与 RHEL 一致，
+# 差别只在包管理器命令 —— 那个差别由包管理器探测按命令是否存在解决。
+f=$(mkosrelease amzn 'ID=amzn' 'ID_LIKE="centos rhel fedora"')
+expect 'ID=amzn -> rhel' rhel \
+    "$(probe DOT_DISTRO DOT_OS=linux DOT_OSRELEASE_FILE="$f" DOT_PKG_OVERRIDE=yum)"
+
+f=$(mkosrelease amzn2023 'ID="amzn"' 'VERSION_ID="2023"')
+expect 'ID=amzn (quoted, no ID_LIKE) -> rhel' rhel \
+    "$(probe DOT_DISTRO DOT_OS=linux DOT_OSRELEASE_FILE="$f" DOT_PKG_OVERRIDE=yum)"
+
 printf '\n== distro falls back to ID_LIKE ==\n'
 f=$(mkosrelease mint 'ID=linuxmint' 'ID_LIKE="ubuntu debian"')
 expect 'ID=linuxmint -> ubuntu (via ID_LIKE)' ubuntu \
@@ -163,6 +173,63 @@ expect 'macOS has no distro' '' "$(probe DOT_DISTRO DOT_OS=macos)"
 
 printf '\n== package manager selection ==\n'
 expect 'macOS -> brew' brew "$(probe DOT_PKG DOT_OS=macos)"
+
+# RHEL 族的 dnf / yum 选择。用 PATH 里的替身可执行文件控制「哪个命令存在」——
+# 比遮蔽 command -v 更接近真实，探测代码原样跑。
+# 前提：本机既没 dnf 也没 yum（macOS 与 Debian 容器都成立），
+# 所以替身目录就是唯一来源。
+mkstubdir() {
+    _sd="$DOT_TEST_TMP/stub-$1"
+    mkdir -p "$_sd"
+    shift
+    for _cmd in "$@"; do
+        printf '#!/bin/sh\nexit 0\n' >"$_sd/$_cmd"
+        chmod +x "$_sd/$_cmd"
+    done
+    printf '%s' "$_sd"
+}
+
+rhel_os=$(mkosrelease rhel8 'ID=rhel' 'ID_LIKE=fedora')
+
+# 下面这组关掉兜底探测（DOT_PKG_NO_FALLBACK=1）。必须关 ——
+# 兜底列表里也有 yum，不关的话撤掉 rhel 分支后兜底会接住，
+# 断言照样通过，等于什么都没测。这是变异测试实际暴露出来的。
+probe_nofb() {
+    _v=$1
+    shift
+    probe "$_v" DOT_PKG_NO_FALLBACK=1 "$@"
+}
+
+# RHEL 8+：dnf 与 yum 都存在，必须选 dnf —— yum 只是指向 dnf 的兼容 shim
+d=$(mkstubdir both dnf yum)
+expect 'rhel with both dnf and yum -> dnf' dnf \
+    "$(probe_nofb DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$rhel_os" PATH="$d:$PATH")"
+
+# RHEL/CentOS 7、Amazon Linux 2：只有 yum。此前这里会硬退出。
+d=$(mkstubdir yumonly yum)
+expect 'rhel with only yum -> yum' yum \
+    "$(probe_nofb DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$rhel_os" PATH="$d:$PATH")"
+
+d=$(mkstubdir dnfonly dnf)
+expect 'rhel with only dnf -> dnf' dnf \
+    "$(probe_nofb DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$rhel_os" PATH="$d:$PATH")"
+
+# Amazon Linux 走同一条路径（ID=amzn 归入 rhel 族）
+amzn_os=$(mkosrelease amznpkg 'ID=amzn' 'ID_LIKE="centos rhel fedora"')
+d=$(mkstubdir amznyum yum)
+expect 'Amazon Linux with only yum -> yum' yum \
+    "$(probe_nofb DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$amzn_os" PATH="$d:$PATH")"
+
+# 兜底探测是独立的第二条路径，单独测（这里当然要开着兜底）
+unknown_os=$(mkosrelease unknownyum 'ID=plan9')
+d=$(mkstubdir fallbackyum yum)
+expect 'unknown distro falls back to yum' yum \
+    "$(probe DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$unknown_os" PATH="$d:$PATH")"
+
+# 兜底探测里 dnf 优先于 yum（两者都在时不该选 yum）
+d=$(mkstubdir fallbackboth dnf yum)
+expect 'unknown distro prefers dnf over yum' dnf \
+    "$(probe DOT_PKG DOT_OS=linux DOT_OSRELEASE_FILE="$unknown_os" PATH="$d:$PATH")"
 
 printf '\n== unsupported OS exits non-zero ==\n'
 # uname 无法在 env 里覆盖，用 shell 函数遮蔽

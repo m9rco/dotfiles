@@ -7,7 +7,7 @@
 #   DOT_OS           macos | linux | windows
 #   DOT_ARCH         arm64 | x86_64
 #   DOT_DISTRO       debian|ubuntu|fedora|rhel|arch|alpine|suse|unknown（仅 linux，其余为空）
-#   DOT_PKG          brew | apt | dnf | pacman | apk | winget | scoop
+#   DOT_PKG          brew | apt | dnf | yum | pacman | apk | winget | scoop
 #   DOT_WSL          1 | 0
 #   DOT_HEADLESS     1 | 0
 #   DOT_BREW_PREFIX  Homebrew 前缀，未安装时为空
@@ -72,6 +72,10 @@ _dot_distro_from_ids() {
             ubuntu) echo ubuntu && return 0 ;;
             fedora) echo fedora && return 0 ;;
             rhel | centos | rocky | almalinux) echo rhel && return 0 ;;
+            # Amazon Linux 2 只有 yum（无 dnf），是 yum 支持的主要现实场景。
+            # 归入 rhel 族而不是单列：它的包名与 RHEL 一致，差别只在包管理器命令，
+            # 而那个差别由 _dot_detect_pkg 按命令是否存在解决。
+            amzn | amazonlinux) echo rhel && return 0 ;;
             arch | archlinux) echo arch && return 0 ;;
             alpine) echo alpine && return 0 ;;
             suse | opensuse | opensuse-leap | opensuse-tumbleweed | sles) echo suse && return 0 ;;
@@ -161,15 +165,31 @@ _dot_detect_pkg() {
             # 优先用发行版原生管理器：系统包与系统库版本匹配，且不需要额外引导。
             case $DOT_DISTRO in
                 debian | ubuntu) command -v apt-get >/dev/null 2>&1 && DOT_PKG=apt ;;
-                fedora | rhel) command -v dnf >/dev/null 2>&1 && DOT_PKG=dnf ;;
+                # dnf 优先、yum 兜底。RHEL/CentOS 8+ 两者都在（yum 是指向 dnf 的
+                # 兼容 shim），而 RHEL/CentOS 7 与 Amazon Linux 2 只有 yum ——
+                # 那些机器此前会一路落到 "no supported package manager found" 硬退出。
+                fedora | rhel)
+                    if command -v dnf >/dev/null 2>&1; then
+                        DOT_PKG=dnf
+                    elif command -v yum >/dev/null 2>&1; then
+                        DOT_PKG=yum
+                    fi
+                    ;;
                 arch) command -v pacman >/dev/null 2>&1 && DOT_PKG=pacman ;;
                 alpine) command -v apk >/dev/null 2>&1 && DOT_PKG=apk ;;
                 suse) command -v zypper >/dev/null 2>&1 && DOT_PKG=zypper ;;
             esac
 
-            # 发行版未知或原生管理器缺失时，按实际存在的命令兜底探测
-            if [ -z "$DOT_PKG" ]; then
-                for _dot_try in apt-get:apt dnf:dnf pacman:pacman apk:apk zypper:zypper; do
+            # 发行版未知或原生管理器缺失时，按实际存在的命令兜底探测。
+            # dnf 必须排在 yum 之前 —— RHEL 8+ 上两者都存在，而 yum 只是
+            # 指向 dnf 的兼容 shim，选它等于多绕一层。
+            #
+            # DOT_PKG_NO_FALLBACK=1 关掉这一步，仅供测试隔离用：
+            # 兜底能选出的东西与按发行版选的高度重叠，不关掉就无法断言
+            # 「发行版分支自己选对了」—— 撤掉发行版分支时兜底会接住，
+            # 断言照样通过，等于没测。（开发中实际踩到过。）
+            if [ -z "$DOT_PKG" ] && [ "${DOT_PKG_NO_FALLBACK:-0}" != 1 ]; then
+                for _dot_try in apt-get:apt dnf:dnf yum:yum pacman:pacman apk:apk zypper:zypper; do
                     _dot_cmd=${_dot_try%%:*}
                     _dot_name=${_dot_try##*:}
                     if command -v "$_dot_cmd" >/dev/null 2>&1; then
@@ -186,7 +206,7 @@ _dot_detect_pkg() {
 
             if [ -z "$DOT_PKG" ]; then
                 dot_error "no supported package manager found"
-                dot_error "expected one of: apt, dnf, pacman, apk, zypper, brew"
+                dot_error "expected one of: apt, dnf, yum, pacman, apk, zypper, brew"
                 exit 1
             fi
             ;;

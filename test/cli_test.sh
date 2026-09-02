@@ -393,6 +393,59 @@ out=$(env -i HOME="$FIX/zhome2" PATH="$NOZSH" CI=1 \
     sh "$BOOT" --only zsh </dev/null 2>&1)
 expect_has 'a missing zsh triggers an install attempt' 'zsh' "$(cat "$FIX/install.log" 2>/dev/null)$out"
 
+printf '\n== the yum path in platform/linux.sh ==\n'
+#
+# RHEL/CentOS 7 与 Amazon Linux 2 只有 yum。这组直接调 platform 层的两个
+# 函数，不经过模块 —— 要验证的就是「DOT_PKG=yum 时包名给对、命令调对」。
+#
+# 用替身 sudo/yum 把安装变成可观测的记录，不真装东西。
+
+pkgname_under() {
+    env DOT_PKG="$1" DOT_LIB_DIR="$DOT_REPO/lib" \
+        sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_name \"\$1\"" _ "$2" 2>/dev/null
+}
+
+# 包名对 dnf 与 yum 必须一致 —— RHEL 族是同一套包名。
+# 逐个比对而不是抽查：漏一个的症状是静默走 cargo 编译，不报错。
+mismatch=''
+for tool in fd bat rg delta eza lazygit starship zoxide atuin gh yq \
+    dust procs xh sd tldr duf hyperfine btop htop direnv tmux \
+    fzf jq git zsh curl unzip; do
+    a=$(pkgname_under dnf "$tool")
+    b=$(pkgname_under yum "$tool")
+    [ "$a" = "$b" ] || mismatch="$mismatch $tool(dnf=$a,yum=$b)"
+done
+expect 'every tool maps to the same package name under dnf and yum' '' "$mismatch"
+
+# 抽查两个有实际映射的，确认不是「两边都是空串所以相等」
+expect 'fd maps to fd-find under yum' 'fd-find' "$(pkgname_under yum fd)"
+expect 'gh maps to github-cli under yum' 'github-cli' "$(pkgname_under yum gh)"
+expect 'delta maps to git-delta under yum' 'git-delta' "$(pkgname_under yum delta)"
+
+# 安装命令必须调 yum 而不是 dnf。只有 yum 的机器上调 dnf 会直接失败。
+YB="$FIX/yumbox"
+mkdir -p "$YB/bin"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/calls.log"\nexit 0\n' "$YB" >"$YB/bin/yum"
+printf '#!/bin/sh\nprintf "dnf-was-called %%s\\n" "$*" >>"%s/calls.log"\nexit 0\n' "$YB" >"$YB/bin/dnf"
+# 非 root 时 platform 层会走 sudo，替身 sudo 直接转发
+printf '#!/bin/sh\nexec "$@"\n' >"$YB/bin/sudo"
+chmod +x "$YB/bin/yum" "$YB/bin/dnf" "$YB/bin/sudo"
+
+env DOT_PKG=yum PATH="$YB/bin:$PATH" DOT_LIB_DIR="$DOT_REPO/lib" \
+    sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_install ripgrep" \
+    >/dev/null 2>&1
+calls=$(cat "$YB/calls.log" 2>/dev/null || true)
+expect_has 'DOT_PKG=yum installs via yum install -y' 'install -y ripgrep' "$calls"
+expect_lacks 'DOT_PKG=yum never shells out to dnf' 'dnf-was-called' "$calls"
+
+# 反面：DOT_PKG=dnf 时不该调 yum
+: >"$YB/calls.log"
+env DOT_PKG=dnf PATH="$YB/bin:$PATH" DOT_LIB_DIR="$DOT_REPO/lib" \
+    sh -c ". \"$DOT_REPO/platform/linux.sh\"; dot_platform_pkg_install ripgrep" \
+    >/dev/null 2>&1
+calls=$(cat "$YB/calls.log" 2>/dev/null || true)
+expect_has 'DOT_PKG=dnf still uses dnf' 'dnf-was-called' "$calls"
+
 printf '\n---------------------------------\n'
 printf 'passed: %s  failed: %s\n' "$_pass" "$_fail"
 [ "$_fail" -eq 0 ] || exit 1

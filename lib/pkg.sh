@@ -3,7 +3,7 @@
 # 包安装抽象。模块只调 dot_pkg_install ripgrep，不关心背后是 brew、apt 还是回退二进制。
 #
 # 安装链（按序尝试，任一成功即止）：
-#   1. 平台包管理器（brew / apt / dnf / pacman / apk / zypper）
+#   1. 平台包管理器（brew / apt / dnf / yum / pacman / apk / zypper）
 #   2. 声明的回退方式（cargo / npm / 官方安装脚本）
 # 全部失败只记录，由调用方决定是否致命 —— 单个工具装不上不应中断整个引导。
 #
