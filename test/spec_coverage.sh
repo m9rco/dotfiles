@@ -19,7 +19,17 @@ set -u
 DOT_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$DOT_ROOT" || exit 1
 
-SPEC_DIR=openspec/changes/modernize-dotfiles/specs
+# 主 spec 目录。归档前这里读的是 change 目录下的 delta spec，change 一归档
+# 就断了 —— 现在读被提升后的主 spec，那是长期真源，不随 change 生命周期移动。
+SPEC_DIR=openspec/specs
+
+# 归档后的 change 目录（notes/ 里的迁移记录仍需被引用）。
+# 用通配而不写死日期：日期由归档当天决定，写死会让这里变成又一个待断的引用。
+ARCHIVE_DIR=$(set -- openspec/changes/archive/*-modernize-dotfiles && printf '%s' "$1")
+if [ ! -d "$ARCHIVE_DIR" ]; then
+    printf 'FAILED: archived change dir not found (glob did not match): %s\n' "$ARCHIVE_DIR" >&2
+    exit 1
+fi
 
 CHECK_ONLY=0
 [ "${1:-}" = --check ] && CHECK_ONLY=1
@@ -39,7 +49,9 @@ trap 'rm -f "$TMP_MATCH"' EXIT INT TERM
 #   PENDING:<原因>  尚未验证 —— 这才是这份表格的价值所在
 
 coverage_data() {
-    cat <<'EOF'
+    # 展开式 heredoc（无引号）—— 表里要引用 $ARCHIVE_DIR。
+    # 数据本身不含 $、反引号或反斜杠，所以展开不会有别的副作用。
+    cat <<EOF
 platform-detection|操作系统识别|lib/detect.sh|test:detect_test.sh
 platform-detection|CPU 架构识别|lib/detect.sh|test:detect_test.sh
 platform-detection|Linux 发行版识别|lib/detect.sh|test:detect_test.sh
@@ -124,7 +136,7 @@ secrets-management|本地推理工具可选安装|modules/secrets|test:secrets_t
 secrets-management|密钥值不出现在日志|lib/secrets.sh|test:secrets_test.sh
 
 legacy-migration|彻底移除全部 git 子模块|已执行|test:migration_test.sh
-legacy-migration|vim 插件改由插件管理器管理|openspec/changes/modernize-dotfiles/notes/vim-plugins.md|test:migration_test.sh
+legacy-migration|vim 插件改由插件管理器管理|$ARCHIVE_DIR/notes/vim-plugins.md|test:migration_test.sh
 legacy-migration|private 目录整体归档|legacy/private/|test:migration_test.sh
 legacy-migration|新配置为重写而非搬迁|config/|lint:no-hardcoded-home
 legacy-migration|旧安装脚本退出使用|legacy/private/install.sh|test:migration_test.sh
@@ -277,6 +289,18 @@ fi
 
 printf '\n'
 printf 'covered: %s / %s\n' "$covered" "$total"
+
+# 下限断言。没有这条，SPEC_DIR 指错时脚本会报「covered: 0 / 0」然后正常退出 ——
+# 零条需求当然「全部被覆盖」。归档时就实际踩到了：delta spec 被提升成主 spec、
+# change 目录移走，这里读到空目录，覆盖度检查静默失效而 CI 依旧全绿。
+# 断言真实存在的数量，让「读不到 spec」表现为失败而不是满分。
+MIN_REQUIREMENTS=85
+if [ "$total" -lt "$MIN_REQUIREMENTS" ]; then
+    printf 'FAILED: only %s requirements found in %s, expected at least %s\n' \
+        "$total" "$SPEC_DIR" "$MIN_REQUIREMENTS"
+    printf '  spec 被删了，还是 SPEC_DIR 指错了？0/0 不是满分。\n'
+    exit 1
+fi
 
 if [ -n "$uncovered" ]; then
     printf 'UNCOVERED requirements:%s\n' "$uncovered"

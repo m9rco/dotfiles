@@ -44,7 +44,7 @@
 
 - **8 个已声明的**（`docker/*`）：`.gitmodules` 里有 URL，内容在
   `m9rco/*` 的独立远端仓库。移除前逐个验证了远端可达 ——
-  见 `openspec/changes/modernize-dotfiles/notes/submodule-removal.md`。
+  见 `openspec/changes/archive/2026-09-02-modernize-dotfiles/notes/submodule-removal.md`。
 - **16 个孤立 gitlink**：索引里是子模块但 `.gitmodules` 里没有条目，
   即仓库从未记录它们来自哪里。包括 11 个 vim 插件、`lib/dotfiles`、
   以及几个 `.cache` 目录。

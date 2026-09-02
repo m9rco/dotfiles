@@ -74,7 +74,7 @@ requirement 总数：85
 | Requirement | 实现 | 验证 |
 |---|---|---|
 | 彻底移除全部 git 子模块 | `已执行` | test:migration_test.sh |
-| vim 插件改由插件管理器管理 | `openspec/changes/modernize-dotfiles/notes/vim-plugins.md` | test:migration_test.sh |
+| vim 插件改由插件管理器管理 | `openspec/changes/archive/2026-09-02-modernize-dotfiles/notes/vim-plugins.md` | test:migration_test.sh |
 | private 目录整体归档 | `legacy/private/` | test:migration_test.sh |
 | 新配置为重写而非搬迁 | `config/` | lint:no-hardcoded-home |
 | 旧安装脚本退出使用 | `legacy/private/install.sh` | test:migration_test.sh |

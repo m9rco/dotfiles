@@ -138,7 +138,9 @@ ok_if 'the upgrade guide covers the git identity move' \
 # ------------------------------------------------------------------ 迁移记录
 
 printf '\n== the removal was documented before it happened ==\n'
-NOTES=openspec/changes/modernize-dotfiles/notes
+# change 已归档，notes/ 随之移入 archive。用通配而不写死归档日期。
+NOTES=$(set -- openspec/changes/archive/*-modernize-dotfiles/notes && printf '%s' "$1")
+ok_if 'the archived change notes directory exists' "[ -d $NOTES ]"
 ok_if 'the submodule verification report exists' "[ -f $NOTES/submodule-removal.md ]"
 ok_if 'the report records remote reachability' \
     "grep -q '远端可达' $NOTES/submodule-removal.md"

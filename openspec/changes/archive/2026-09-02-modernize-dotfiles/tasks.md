@@ -74,7 +74,7 @@
 - [x] 6.5 实现非阻断版本检查：输出版本号，查询失败仅告警不使模块失败
 - [x] 6.6 确认安装流程不索取 API key / 不触发登录，并在完成后输出后续认证指引
 - [x] 6.7 实现 dry-run（打印待装 CLI 与计划安装方式、零安装零下载）
-- [ ] 6.8 验证 WSL 内的安装独立于 Windows 宿主机安装（需要真实 WSL，随第 9 组一起验证）
+- [ ] 6.8 验证 WSL 内的安装独立于 Windows 宿主机安装 —— **归档时仍未验证**：需要真实 WSL，开发机是 macOS、CI runner 也提供不了。代码层面已按双轨设计（WSL 内走 `bootstrap.sh` 的 Linux 路径、`DOT_WSL` 探测已有断言覆盖），未验证的是「两侧安装互不干扰」这一实机行为。要收尾需在一台 Windows + WSL 机器上实跑，见 9.10
 
 ## 7. AI agent 与 MCP 配置
 
@@ -111,7 +111,7 @@
 - [x] 9.7 实现 Windows 字体安装（复制到用户字体位置 + 写用户注册表，免提权）
 - [x] 9.8 Windows 侧 AI CLI 走同一份 config/ai/clis.txt 与 scoop/winget 抽象；CI windows job 实测 -DryRun 规划出 12 个工具、PowerShell 5.1 与 7 都能跑
 - [x] 9.9 用 PSScriptAnalyzer 检查全部 `.ps1`，并执行 `-DryRun` 与 `-List` 冒烟
-- [ ] 9.10 在 WSL 中执行 `bootstrap.sh` 验证双轨（需真实 WSL 环境）
+- [ ] 9.10 在 WSL 中执行 `bootstrap.sh` 验证双轨 —— **归档时仍未验证**，原因同 6.8：无真实 WSL 环境。`DOT_WSL` 探测本身有断言（伪造 `/proc/sys/kernel/osrelease`），字体模块在 WSL 下跳过也有断言；缺的是端到端实跑。这两项是本 change 唯一未闭环的部分，归档不代表已完成 —— 将来在 WSL 机器上验证时另开 change 记录结果
 
 ## 10. 迁移与清理
 
