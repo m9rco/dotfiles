@@ -146,9 +146,10 @@ sh test/lint_ps.sh                      # PowerShell 语法 + PSScriptAnalyzer
 bin/dot-bench                           # 测量 zsh 启动耗时（预算 200ms）
 ```
 
-CI 有 6 个 job：静态检查、密钥扫描（工作区 + 全部历史）、macOS/Ubuntu ×
-sh/dash 测试矩阵、引导冒烟、Windows runner（PowerShell 5.1 与 7 都验证）、
-以及一个 `debian:stable-slim` 容器 job 做真实安装 —— 那个容器的 `/bin/sh`
+CI 有 6 个 job 定义、展开成 10 次运行（`test` 与 `smoke` 带平台矩阵）：
+静态检查、密钥扫描（工作区 + 全部历史）、macOS/Ubuntu × sh/dash 测试矩阵、
+引导冒烟、Windows runner（PowerShell 5.1 与 7 都验证）、以及一个
+`debian:stable-slim` 容器 job 做真实安装 —— 那个容器的 `/bin/sh`
 是 dash 且几乎什么都没预装，能在那里跑通才说明引导没有隐式依赖。
 
 ## 从旧版本升级
