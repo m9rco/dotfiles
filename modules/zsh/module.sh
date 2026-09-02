@@ -39,7 +39,9 @@ install() {
 
 # 把 zsh 设为默认 shell。三条约束：
 #   - 已是 zsh 则跳过
-#   - headless（SSH/CI/容器）下不改 —— 会话中途换 shell 风险高且无收益
+#   - headless（SSH/CI/容器）下默认不改 —— 会话中途换 shell 风险高。
+#     但 SSH 进一台新机器做初始配置是常态，那时候用户是真想改的，
+#     所以给一个显式开关 DOT_SET_DEFAULT_SHELL=1 越过这条。
 #   - 需要用户确认 —— 这是对账户的持久修改
 _dot_set_default_shell() {
     _dot_zsh_path=$(command -v zsh 2>/dev/null)
@@ -55,37 +57,83 @@ _dot_set_default_shell() {
             ;;
     esac
 
-    if [ "$DOT_HEADLESS" = 1 ]; then
+    # 显式开关：设了就当成「已确认」，不再问，也不受 headless 限制。
+    # 无人值守的机器配置（SSH、容器镜像构建、Ansible）需要这条路。
+    _dot_shell_forced=0
+    [ "${DOT_SET_DEFAULT_SHELL:-0}" = 1 ] && _dot_shell_forced=1
+
+    if [ "$DOT_HEADLESS" = 1 ] && [ "$_dot_shell_forced" = 0 ]; then
         dot_skip 'headless environment; not changing the default shell'
         dot_tip "run 'chsh -s $_dot_zsh_path' yourself when on an interactive machine"
+        dot_tip '  or re-run with DOT_SET_DEFAULT_SHELL=1 to change it without asking'
         return 0
     fi
 
     if dot_is_dry_run; then
-        dot_info "[dry-run] would ask to change the default shell to $_dot_zsh_path"
+        if [ "$_dot_shell_forced" = 1 ]; then
+            dot_info "[dry-run] would change the default shell to $_dot_zsh_path (DOT_SET_DEFAULT_SHELL=1)"
+        else
+            dot_info "[dry-run] would ask to change the default shell to $_dot_zsh_path"
+        fi
         return 0
     fi
 
-    dot_prompt "Change your default shell to $_dot_zsh_path? [y/N]"
-    read -r _dot_answer
+    if ! _dot_confirm_default_shell; then
+        return 0
+    fi
+
+    # /etc/shells 里没有的 shell 无法被 chsh 接受
+    if [ -w /etc/shells ] || grep -qx "$_dot_zsh_path" /etc/shells 2>/dev/null; then
+        :
+    else
+        dot_tip "$_dot_zsh_path is not listed in /etc/shells; chsh may refuse it"
+    fi
+    if chsh -s "$_dot_zsh_path"; then
+        dot_success "default shell changed to $_dot_zsh_path (takes effect on next login)"
+    else
+        dot_error 'chsh failed; change your shell manually'
+        return 1
+    fi
+}
+
+# 取得「是否改默认 shell」的确认。返回 0 表示要改。
+#
+# 关键点是 stdin 不是 tty 时不能直接 `read` —— 它会立刻拿到 EOF，
+# 而空答案落到 [y/N] 的默认分支，于是屏幕上先印出问题、紧接着自己
+# 回答「不改」。用户看到的是一个从没等他输入的提问。
+# `curl … | sh` 与 `./bootstrap.sh </dev/null` 都会走到这条路上。
+#
+# 所以：stdin 不是 tty 时改从 /dev/tty 读（管道安装下终端仍然在），
+# 连 /dev/tty 都没有才跳过，并且说清楚是「没法问」而不是「你拒绝了」。
+_dot_confirm_default_shell() {
+    if [ "$_dot_shell_forced" = 1 ]; then
+        dot_info "DOT_SET_DEFAULT_SHELL=1; changing the default shell to $_dot_zsh_path"
+        return 0
+    fi
+
+    if [ -t 0 ]; then
+        dot_prompt "Change your default shell to $_dot_zsh_path? [y/N]"
+        read -r _dot_answer || _dot_answer=''
+    # 管道安装：stdin 被脚本自己占着，但终端通常还能直接打开。
+    #
+    # 必须真的去开一次 /dev/tty，不能只用 [ -r /dev/tty ] —— 没有控制终端时
+    # 那个设备节点照样存在且「可读」，测试通过而随后的 read 报
+    # "Device not configured"，问题还是印在了屏幕上（实测如此）。
+    elif { : </dev/tty; } 2>/dev/null; then
+        dot_prompt "Change your default shell to $_dot_zsh_path? [y/N]"
+        read -r _dot_answer </dev/tty || _dot_answer=''
+    else
+        dot_skip 'no terminal available to ask; not changing the default shell'
+        dot_tip "run 'chsh -s $_dot_zsh_path' yourself, or re-run with DOT_SET_DEFAULT_SHELL=1"
+        return 1
+    fi
+
     case "$_dot_answer" in
-        y | Y | yes | YES)
-            # /etc/shells 里没有的 shell 无法被 chsh 接受
-            if [ -w /etc/shells ] || grep -qx "$_dot_zsh_path" /etc/shells 2>/dev/null; then
-                :
-            else
-                dot_tip "$_dot_zsh_path is not listed in /etc/shells; chsh may refuse it"
-            fi
-            if chsh -s "$_dot_zsh_path"; then
-                dot_success "default shell changed to $_dot_zsh_path (takes effect on next login)"
-            else
-                dot_error 'chsh failed; change your shell manually'
-                return 1
-            fi
-            ;;
+        y | Y | yes | YES) return 0 ;;
         *)
             dot_skip 'leaving the default shell unchanged'
             dot_tip "run 'chsh -s $_dot_zsh_path' later if you change your mind"
+            return 1
             ;;
     esac
 }

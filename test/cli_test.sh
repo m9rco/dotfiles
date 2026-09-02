@@ -416,11 +416,25 @@ chmod +x "$ZBIN/chsh"
 run_zsh_module() {
     : >"$FIX/chsh.log"
     mkdir -p "$FIX/zhome"
+    # $3 起是额外的环境变量赋值（如 DOT_SET_DEFAULT_SHELL=1）。
+    # DOT_CONTAINER_PROBE_FILES 指向不存在的路径：否则在容器里跑测试时
+    # /.dockerenv 恒存在，「非 headless」那几条用例永远进不到该走的分支。
+    _zm_shell=${1:-/bin/bash}
+    _zm_ci=${2:-}
+    # 参数可能只给了 1 个（set -u 下 $2 会 unbound，所以上面用 ${2:-}）。
+    # shift 的个数也要跟着算，否则 shift 2 在只有 1 个参数时报错。
+    if [ $# -gt 2 ]; then
+        shift 2
+    else
+        shift $#
+    fi
     env -i HOME="$FIX/zhome" PATH="$ZBIN" \
-        SHELL="${1:-/bin/bash}" \
+        SHELL="$_zm_shell" \
         DOT_TEST_CHSH_LOG="$FIX/chsh.log" \
         DOT_BACKUP_ROOT="$FIX/zbackup" \
-        ${2:+CI=1} \
+        DOT_CONTAINER_PROBE_FILES=/nonexistent-container-marker \
+        ${_zm_ci:+CI=1} \
+        "$@" \
         sh "$BOOT" --only zsh </dev/null 2>&1
 }
 
@@ -433,6 +447,37 @@ expect 'headless run never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 out=$(run_zsh_module /usr/bin/zsh headless)
 expect_has 'already-zsh is reported as already in place' 'already the default shell' "$out"
 expect 'already-zsh never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+
+# ---------------------------------------------------------------- 无 tty 的确认
+#
+# 这几条针对一个真实的 bug：确认逻辑无条件 `read`，而 stdin 不是 tty 时
+# read 立刻拿到 EOF，空答案落进 [y/N] 的默认分支 —— 于是屏幕上先印出
+# 问题、紧接着自己回答「不改」。用户看到一个从没等他输入的提问，
+# 结论是「安装没把 zsh 设成默认 shell」。
+# `curl … | sh` 与 `./bootstrap.sh </dev/null` 都会走到这条路上。
+#
+# 注意这里的 run_zsh_module 已经 </dev/null，正是要测的情形。
+
+# 非 headless、无 tty：不能假装问过
+out=$(run_zsh_module /bin/bash)
+expect_has 'no-tty run says it could not ask' 'no terminal available to ask' "$out"
+expect 'no-tty run never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+# 关键断言：不能印出一个它根本没能力等待回答的问题
+expect_lacks 'no-tty run does not print an unanswerable question' '\[y/N\]' "$out"
+
+# 显式开关：无人值守也能改（SSH 进新机器做初始配置是常态）
+out=$(run_zsh_module /bin/bash '' DOT_SET_DEFAULT_SHELL=1)
+expect_has 'the opt-in explains itself' 'DOT_SET_DEFAULT_SHELL=1' "$out"
+expect_has 'the opt-in calls chsh' 'chsh -s' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+
+# 开关必须能越过 headless —— 否则 SSH/容器里永远设不了默认 shell
+out=$(run_zsh_module /bin/bash headless DOT_SET_DEFAULT_SHELL=1)
+expect_has 'the opt-in overrides headless' 'chsh -s' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+
+# 但 headless 下没有开关时仍然绝不能改
+out=$(run_zsh_module /bin/bash headless)
+expect 'headless without the opt-in still never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+expect_has 'headless mentions the opt-in' 'DOT_SET_DEFAULT_SHELL=1' "$out"
 
 # zsh 缺失时应尝试安装。用一个没有 zsh 的 PATH。
 NOZSH="$FIX/nozsh"

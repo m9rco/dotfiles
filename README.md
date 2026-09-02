@@ -106,6 +106,24 @@ DOT_NO_RUSTUP=1 ./bootstrap.sh    # 不为源码编译安装 Rust 工具链（�
 出路。代价是工具链约 600MB、且之后每个工具都要现场编译 —— 小机器上可能
 几十分钟。不想付这个代价就设 `DOT_NO_RUSTUP=1`，装不上的工具会被明确列出。
 
+## 默认 shell
+
+`zsh` 模块会问一次是否把默认 shell 改成 zsh。三种情况不会问：
+
+- 已经是 zsh —— 跳过。
+- headless（SSH / CI / 容器）—— 默认不改。会话中途换 shell 风险高。
+- 没有终端可问（`curl … | sh` 且 `/dev/tty` 也打不开）—— 不改，并说明原因。
+
+无人值守要改就用显式开关，它同时越过 headless 限制、也不再询问：
+
+```sh
+DOT_SET_DEFAULT_SHELL=1 ./bootstrap.sh --only zsh
+```
+
+**这一步很重要**：本仓库只提供 zsh 配置，不提供 bash 配置。默认 shell 还是
+bash 的话，工具会照常装上、但 `Ctrl-R`（fzf/atuin）、starship prompt、别名
+这些全都不会生效 —— 表现为「装了却什么都没变」。改完要重新登录才生效。
+
 ## 目录结构
 
 ```

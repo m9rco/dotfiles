@@ -5,7 +5,9 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 ## Requirements
 ### Requirement: zsh 安装与默认 shell 设置
 
-在 Unix 平台上，系统 SHALL 确保 zsh 已安装，并在用户确认后将其设为默认 shell。当 zsh 已是默认 shell 时 MUST 跳过设置操作。`DOT_HEADLESS` 为 `1` 时 MUST NOT 修改默认 shell（避免破坏 CI 或远程会话）。
+在 Unix 平台上，系统 SHALL 确保 zsh 已安装，并在用户确认后将其设为默认 shell。当 zsh 已是默认 shell 时 MUST 跳过设置操作。`DOT_HEADLESS` 为 `1` 时 MUST NOT 修改默认 shell（避免破坏 CI 或远程会话），除非 `DOT_SET_DEFAULT_SHELL` 为 `1` —— 该变量表示用户已显式授权，此时 MUST 直接修改且 MUST NOT 询问。
+
+无法取得用户确认时（stdin 不是终端且 `/dev/tty` 打不开，例如 `curl … | sh`）系统 MUST NOT 修改默认 shell，且 MUST NOT 输出它无法等待回答的提问 —— 那会让用户以为自己被问过并被忽略。此时 MUST 提示 `DOT_SET_DEFAULT_SHELL=1` 这条无人值守路径。
 
 #### Scenario: zsh 未安装时安装
 
@@ -20,9 +22,28 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 
 #### Scenario: headless 环境不改默认 shell
 
-- **WHEN** `DOT_HEADLESS` 等于 `1`
+- **WHEN** `DOT_HEADLESS` 等于 `1` 且 `DOT_SET_DEFAULT_SHELL` 不为 `1`
 - **THEN** 系统不调用 `chsh`
 - **AND** 输出提示说明跳过原因
+- **AND** 提示中包含 `DOT_SET_DEFAULT_SHELL=1` 这条替代路径
+
+#### Scenario: 显式授权时无需确认
+
+- **WHEN** `DOT_SET_DEFAULT_SHELL` 等于 `1` 且当前默认 shell 不是 zsh
+- **THEN** 系统直接调用 `chsh`，不询问
+- **AND** 即使 `DOT_HEADLESS` 为 `1` 也执行
+
+#### Scenario: 无终端可询问时不假装问过
+
+- **WHEN** stdin 不是终端且 `/dev/tty` 无法打开，且未设 `DOT_SET_DEFAULT_SHELL`
+- **THEN** 系统不调用 `chsh`
+- **AND** 输出不包含 `[y/N]` 形式的提问
+- **AND** 输出说明的是「无法询问」而非「用户拒绝」
+
+#### Scenario: 管道安装时仍能询问
+
+- **WHEN** stdin 不是终端但 `/dev/tty` 可以打开（如 `curl … | sh`）
+- **THEN** 系统从 `/dev/tty` 读取用户的确认
 
 ### Requirement: zshrc 分片架构
 
