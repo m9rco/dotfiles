@@ -340,9 +340,17 @@ out=$(env PATH="$FIX/nodl:/usr/bin:/bin" sh -c '
     mkdir -p "$1/nodl"
     for t in sh printf grep sed cat mktemp rm mkdir chmod find ls date dirname \
         basename tr cut head env uname id ln readlink mv cp wc od dd sort uniq \
-        stty tar gzip apt-get; do
+        stty tar gzip; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$1/nodl/$t" 2>/dev/null
     done
+    # 替身包管理器。这条用例测的是「没有下载器」，不该依赖真实包管理器 ——
+    # 而 PATH 被收窄成只有 $nodl 后，探测找不到任何包管理器就会直接报
+    # "no supported package manager found" 并退出，断言永远拿不到该看的输出。
+    # 之前这里是给真实的 apt-get 做符号链接，于是只在 Debian 族成立：
+    # RHEL 上没有 apt-get，链接建不起来，这条用例就红（CI 的 Rocky 9 job
+    # 实测如此）。同 $ZBIN 与 $NOZSH 两处已有的替身，写死一个假的。
+    printf "#!/bin/sh\nexit 0\n" >"$1/nodl/apt-get"
+    chmod +x "$1/nodl/apt-get"
     mkdir -p "$1/cfg/cli"
     printf "%s\n" "$2" >"$1/cfg/cli/tools.txt"
     : >"$1/install.log"
@@ -551,10 +559,13 @@ chmod +x "$ZBIN/zsh"
 # 实测 Rocky 9 容器就是这么红的，而 debian 容器碰巧过了。
 printf '#!/bin/sh\nexit 0\n' >"$ZBIN/apt-get"
 chmod +x "$ZBIN/apt-get"
+# 替身 chsh 记录调用后按 DOT_TEST_CHSH_RC 退出（默认 0）。
+# 可控的退出码是为了覆盖「chsh 失败」——那在真实环境里很常见：容器里 PAM
+# 要密码，LDAP/SSSD 管的账户根本不允许改。
 cat >"$ZBIN/chsh" <<'CHSH'
 #!/bin/sh
 printf 'chsh %s\n' "$*" >>"$DOT_TEST_CHSH_LOG"
-exit 0
+exit "${DOT_TEST_CHSH_RC:-0}"
 CHSH
 chmod +x "$ZBIN/chsh"
 
@@ -583,10 +594,10 @@ run_zsh_module() {
         sh "$BOOT" --only zsh </dev/null 2>&1
 }
 
-# headless（CI=1）下绝不能调 chsh
+# 无人值守（CI=1，且 run_zsh_module 已 </dev/null）下绝不能调 chsh
 out=$(run_zsh_module /bin/bash headless)
-expect_has 'headless run explains why it skips chsh' 'not changing the default shell' "$out"
-expect 'headless run never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+expect_has 'unattended run explains why it skips chsh' 'not changing the default shell' "$out"
+expect 'unattended run never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 
 # 已是 zsh 时跳过，且给出提示
 out=$(run_zsh_module /usr/bin/zsh headless)
@@ -605,24 +616,66 @@ expect 'already-zsh never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 
 # 非 headless、无 tty：不能假装问过
 out=$(run_zsh_module /bin/bash)
+rc=$?
 expect_has 'no-tty run says it could not ask' 'no terminal available to ask' "$out"
 expect 'no-tty run never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 # 关键断言：不能印出一个它根本没能力等待回答的问题
 expect_lacks 'no-tty run does not print an unanswerable question' '\[y/N\]' "$out"
 
-# 显式开关：无人值守也能改（SSH 进新机器做初始配置是常态）
+# 而且必须活着走完 —— 这条防的是探测本身把进程杀掉。
+#
+# 探测控制终端曾写成 `{ : </dev/tty; } 2>/dev/null`：`:` 是 special builtin，
+# POSIX 规定它的重定向失败时非交互式 shell 必须直接退出，而 `{ }` 不隔离
+# 那个退出。于是在 dash（Debian/Ubuntu 的 /bin/sh）下整个 bootstrap.sh 死在
+# 这一行，输出只剩一句没有原因的 "zsh failed"，omz 再被依赖级联跳过 ——
+# 用户看到的是「Linux 上补全和默认 shell 都没装成」。
+# macOS 的 /bin/sh 是 bash 3.2、不遵守这条规定，所以本机永远复现不出来。
+# test/lint.sh 的可移植性小节静态地挡住这个形态，这里动态地兜住后果。
+expect 'no-tty run still exits 0 (the tty probe must not kill the script)' 0 "$rc"
+expect_has 'no-tty run reaches the summary' 'succeeded' "$out"
+expect_lacks 'no-tty run does not report a bare unexplained failure' 'zsh failed' "$out"
+
+# 显式开关：无人值守也能改（容器镜像构建、Ansible 需要这条路）
 out=$(run_zsh_module /bin/bash '' DOT_SET_DEFAULT_SHELL=1)
 expect_has 'the opt-in explains itself' 'DOT_SET_DEFAULT_SHELL=1' "$out"
 expect_has 'the opt-in calls chsh' 'chsh -s' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 
-# 开关必须能越过 headless —— 否则 SSH/容器里永远设不了默认 shell
+# 开关必须能越过无人值守判定 —— 否则容器/CI 里永远设不了默认 shell
 out=$(run_zsh_module /bin/bash headless DOT_SET_DEFAULT_SHELL=1)
-expect_has 'the opt-in overrides headless' 'chsh -s' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+expect_has 'the opt-in overrides the unattended check' 'chsh -s' "$(cat "$FIX/chsh.log" 2>/dev/null)"
 
-# 但 headless 下没有开关时仍然绝不能改
+# 但无人值守下没有开关时仍然绝不能改
 out=$(run_zsh_module /bin/bash headless)
-expect 'headless without the opt-in still never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
-expect_has 'headless mentions the opt-in' 'DOT_SET_DEFAULT_SHELL=1' "$out"
+expect 'unattended without the opt-in still never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+expect_has 'the skip mentions the opt-in' 'DOT_SET_DEFAULT_SHELL=1' "$out"
+
+# ---------------------------------------------------------------- SSH 仍然要问
+#
+# lib/detect.sh 把任何 SSH_* 都判成 headless，可 SSH 进一台新机器做初始配置
+# 恰恰是最想改默认 shell 的场合，而且那里有活人守着终端。若以 DOT_HEADLESS
+# 为判据，Linux 服务器上默认 shell 永远不会被改 —— 除非用户事先知道
+# DOT_SET_DEFAULT_SHELL=1，而那是个只有读过源码才找得到的开关。
+#
+# 判据因此是「问得到人吗」而不是「是不是 headless」。这里只能验证「SSH 不再
+# 单独构成跳过的理由」：测试进程没有 tty，所以仍会走到「问不到人」那条路，
+# 但措辞必须是「没法问」而不是「headless 所以不改」。
+out=$(run_zsh_module /bin/bash '' SSH_CONNECTION='10.0.0.1 22 10.0.0.2 22')
+expect_has 'SSH is not by itself a reason to skip' 'no terminal available to ask' "$out"
+expect_lacks 'SSH does not report a headless skip' 'headless environment' "$out"
+expect 'SSH without a terminal still never calls chsh' '' "$(cat "$FIX/chsh.log" 2>/dev/null)"
+
+# ---------------------------------------------------------------- chsh 失败
+#
+# chsh 失败不能让模块失败：到那一步 zsh 已装好、配置已链接，唯一没做到的是
+# 换默认 shell。而 omz 声明了 MODULE_REQUIRES="zsh"，模块失败会让它被依赖
+# 级联跳过 —— 用一个失败的 chsh 换掉整套插件与联想补全，完全不成比例。
+# 真实环境里 chsh 失败很常见：容器里 PAM 要密码，LDAP/SSSD 账户不允许改。
+out=$(run_zsh_module /bin/bash '' DOT_SET_DEFAULT_SHELL=1 DOT_TEST_CHSH_RC=1)
+rc=$?
+expect 'a failing chsh does not fail the module' 0 "$rc"
+expect_has 'the chsh failure is reported' 'chsh failed' "$out"
+expect_has 'it says how to finish the job by hand' "chsh -s" "$out"
+expect_has 'it says the rest of the module is in place' 'everything else in this module is in place' "$out"
 
 # zsh 缺失时应尝试安装。用一个没有 zsh 的 PATH。
 NOZSH="$FIX/nozsh"

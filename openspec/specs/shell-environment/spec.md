@@ -5,9 +5,15 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 ## Requirements
 ### Requirement: zsh 安装与默认 shell 设置
 
-在 Unix 平台上，系统 SHALL 确保 zsh 已安装，并在用户确认后将其设为默认 shell。当 zsh 已是默认 shell 时 MUST 跳过设置操作。`DOT_HEADLESS` 为 `1` 时 MUST NOT 修改默认 shell（避免破坏 CI 或远程会话），除非 `DOT_SET_DEFAULT_SHELL` 为 `1` —— 该变量表示用户已显式授权，此时 MUST 直接修改且 MUST NOT 询问。
+在 Unix 平台上，系统 SHALL 确保 zsh 已安装，并在用户确认后将其设为默认 shell。当 zsh 已是默认 shell 时 MUST 跳过设置操作。`DOT_SET_DEFAULT_SHELL` 为 `1` 表示用户已显式授权，此时 MUST 直接修改且 MUST NOT 询问。
 
-无法取得用户确认时（stdin 不是终端且 `/dev/tty` 打不开，例如 `curl … | sh`）系统 MUST NOT 修改默认 shell，且 MUST NOT 输出它无法等待回答的提问 —— 那会让用户以为自己被问过并被忽略。此时 MUST 提示 `DOT_SET_DEFAULT_SHELL=1` 这条无人值守路径。
+「是否可以询问」的判据 SHALL 是**能否触达用户**（stdin 是终端，或 `/dev/tty` 可以打开），MUST NOT 是 `DOT_HEADLESS`。`DOT_HEADLESS` 把任何 `SSH_*` 都算作无人值守，而 SSH 进一台新机器做初始配置恰恰是最需要改默认 shell 的场合，且那时终端前有人 —— 以它为判据会使 Linux 服务器上的默认 shell 永远不被修改，除非用户事先知道 `DOT_SET_DEFAULT_SHELL=1` 这个只有读过源码才找得到的开关。
+
+无法取得用户确认时（stdin 不是终端且 `/dev/tty` 打不开，例如 `curl … | sh`、CI、容器）系统 MUST NOT 修改默认 shell，且 MUST NOT 输出它无法等待回答的提问 —— 那会让用户以为自己被问过并被忽略。此时 MUST 提示 `DOT_SET_DEFAULT_SHELL=1` 这条无人值守路径。
+
+探测 `/dev/tty` 可用性 MUST NOT 让引导进程终止。POSIX 规定 special builtin（`:` 等）的重定向失败时非交互式 shell 必须退出，而 `{ }` 不隔离该退出 —— 因此这类探测 MUST 置于子 shell `( )` 内。这不是风格问题：`{ : </dev/tty; }` 在 dash（Debian/Ubuntu 的 `/bin/sh`）下会静默杀死整个引导，输出只剩一句不带原因的失败，且依赖本模块的下游模块会被级联跳过；而 macOS 的 `/bin/sh` 是 bash 3.2，不遵守该规定，故此类缺陷在本机无法复现。
+
+`chsh` 本身失败时系统 MUST NOT 使模块失败 —— 此时 zsh 与配置均已就位，仅默认 shell 未变更。模块失败会通过依赖关系级联跳过下游模块（oh-my-zsh 与插件），使一次失败的 `chsh` 连带移除整套 shell 增强。系统 MUST 报告失败原因并给出手工 `chsh -s` 的指引。
 
 #### Scenario: zsh 未安装时安装
 
@@ -20,18 +26,38 @@ TBD - created by archiving change modernize-dotfiles. Update Purpose after archi
 - **THEN** 不执行 `chsh`
 - **AND** 输出提示说明已就位
 
-#### Scenario: headless 环境不改默认 shell
+#### Scenario: 无人值守环境不改默认 shell
 
-- **WHEN** `DOT_HEADLESS` 等于 `1` 且 `DOT_SET_DEFAULT_SHELL` 不为 `1`
+- **WHEN** 触达不到用户（stdin 不是终端且 `/dev/tty` 打不开，如 CI、容器、`curl … | sh`）且 `DOT_SET_DEFAULT_SHELL` 不为 `1`
 - **THEN** 系统不调用 `chsh`
 - **AND** 输出提示说明跳过原因
 - **AND** 提示中包含 `DOT_SET_DEFAULT_SHELL=1` 这条替代路径
+
+#### Scenario: SSH 会话中仍然询问
+
+- **WHEN** 处于 SSH 会话（`DOT_HEADLESS` 因此为 `1`）但终端可以触达
+- **THEN** 系统照常询问是否修改默认 shell
+- **AND** 输出不把「headless」当作跳过的理由
 
 #### Scenario: 显式授权时无需确认
 
 - **WHEN** `DOT_SET_DEFAULT_SHELL` 等于 `1` 且当前默认 shell 不是 zsh
 - **THEN** 系统直接调用 `chsh`，不询问
-- **AND** 即使 `DOT_HEADLESS` 为 `1` 也执行
+- **AND** 即使无法触达用户也执行
+
+#### Scenario: 探测终端不会终止引导
+
+- **WHEN** 在 dash 之类严格遵守 POSIX special builtin 规则的 shell 下运行，且没有控制终端
+- **THEN** 引导继续执行至汇总阶段并以 `0` 退出
+- **AND** 不出现不带原因的模块失败
+- **AND** 依赖本模块的下游模块不被级联跳过
+
+#### Scenario: chsh 失败不使模块失败
+
+- **WHEN** 用户已确认修改，但 `chsh` 以非零状态退出（如容器内 PAM 要求密码）
+- **THEN** 模块以 `0` 退出
+- **AND** 输出报告 `chsh` 失败及手工执行 `chsh -s` 的指引
+- **AND** 下游的 oh-my-zsh 模块仍然执行
 
 #### Scenario: 无终端可询问时不假装问过
 
