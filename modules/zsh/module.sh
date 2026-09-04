@@ -39,10 +39,20 @@ install() {
 
 # 把 zsh 设为默认 shell。三条约束：
 #   - 已是 zsh 则跳过
-#   - headless（SSH/CI/容器）下默认不改 —— 会话中途换 shell 风险高。
-#     但 SSH 进一台新机器做初始配置是常态，那时候用户是真想改的，
-#     所以给一个显式开关 DOT_SET_DEFAULT_SHELL=1 越过这条。
+#   - 无人值守时不改 —— 会话中途换 shell 风险高，且没人能为它负责。
+#     显式开关 DOT_SET_DEFAULT_SHELL=1 越过这条。
 #   - 需要用户确认 —— 这是对账户的持久修改
+#
+# 「无人值守」刻意不等于 DOT_HEADLESS。lib/detect.sh 把任何 SSH_* 都判成
+# headless，可 SSH 进一台新机器做初始配置恰恰是最想改默认 shell 的场合，
+# 而且那里有活人守着终端。以 DOT_HEADLESS 为准的后果是：Linux 服务器上
+# 默认 shell 永远不会被改，用户还得先知道 DOT_SET_DEFAULT_SHELL=1 这个开关
+# 才行 —— 一个只有读过源码的人才找得到的开关，等于没有。
+#
+# 所以判据换成「问得到人吗」：有 tty（或能打开 /dev/tty）就照常询问，
+# 真正无人值守的 CI、容器、`curl … | sh` 则静默跳过 —— 那些场景里恰好也
+# 触达不到终端，所以同一个判断就够了，本函数不再读 DOT_HEADLESS。
+# 判断集中在 _dot_confirm_default_shell 一处。
 _dot_set_default_shell() {
     _dot_zsh_path=$(command -v zsh 2>/dev/null)
     [ -n "$_dot_zsh_path" ] || {
@@ -57,17 +67,10 @@ _dot_set_default_shell() {
             ;;
     esac
 
-    # 显式开关：设了就当成「已确认」，不再问，也不受 headless 限制。
-    # 无人值守的机器配置（SSH、容器镜像构建、Ansible）需要这条路。
+    # 显式开关：设了就当成「已确认」，不再问，也不受可交互性限制。
+    # 无人值守的机器配置（容器镜像构建、Ansible）需要这条路。
     _dot_shell_forced=0
     [ "${DOT_SET_DEFAULT_SHELL:-0}" = 1 ] && _dot_shell_forced=1
-
-    if [ "$DOT_HEADLESS" = 1 ] && [ "$_dot_shell_forced" = 0 ]; then
-        dot_skip 'headless environment; not changing the default shell'
-        dot_tip "run 'chsh -s $_dot_zsh_path' yourself when on an interactive machine"
-        dot_tip '  or re-run with DOT_SET_DEFAULT_SHELL=1 to change it without asking'
-        return 0
-    fi
 
     if dot_is_dry_run; then
         if [ "$_dot_shell_forced" = 1 ]; then
@@ -88,11 +91,22 @@ _dot_set_default_shell() {
     else
         dot_tip "$_dot_zsh_path is not listed in /etc/shells; chsh may refuse it"
     fi
+    # chsh 失败只告警，不让模块失败。
+    #
+    # 到这一步 zsh 已装好、zshrc 与片段目录都已链接 —— 唯一没做到的是换
+    # 默认 shell，那不该让整个模块非零退出：omz 声明了 MODULE_REQUIRES="zsh"，
+    # 模块失败会让它被依赖级联跳过，于是插件与联想补全一起消失。
+    # 用一个失败的 chsh 换掉整套 shell 增强，代价与收益完全不成比例。
+    #
+    # 而 chsh 失败在真实环境里很常见：容器里 PAM 会要密码
+    # （实测 debian:12 报 "chsh: PAM: Authentication failure"），
+    # LDAP/SSSD 管的账户则根本不允许改。
     if chsh -s "$_dot_zsh_path"; then
         dot_success "default shell changed to $_dot_zsh_path (takes effect on next login)"
     else
-        dot_error 'chsh failed; change your shell manually'
-        return 1
+        dot_error 'chsh failed; the default shell is unchanged'
+        dot_tip "run 'chsh -s $_dot_zsh_path' yourself (it may ask for your password)"
+        dot_tip '  everything else in this module is in place; zsh still runs when invoked by name'
     fi
 }
 
@@ -105,6 +119,10 @@ _dot_set_default_shell() {
 #
 # 所以：stdin 不是 tty 时改从 /dev/tty 读（管道安装下终端仍然在），
 # 连 /dev/tty 都没有才跳过，并且说清楚是「没法问」而不是「你拒绝了」。
+#
+# 这个函数同时也是「能不能改默认 shell」的唯一判据（见
+# _dot_set_default_shell 上方关于为何不用 DOT_HEADLESS 的说明）：
+# 问得到人就问，问不到就跳过。
 _dot_confirm_default_shell() {
     if [ "$_dot_shell_forced" = 1 ]; then
         dot_info "DOT_SET_DEFAULT_SHELL=1; changing the default shell to $_dot_zsh_path"
@@ -119,12 +137,20 @@ _dot_confirm_default_shell() {
     # 必须真的去开一次 /dev/tty，不能只用 [ -r /dev/tty ] —— 没有控制终端时
     # 那个设备节点照样存在且「可读」，测试通过而随后的 read 报
     # "Device not configured"，问题还是印在了屏幕上（实测如此）。
-    elif { : </dev/tty; } 2>/dev/null; then
+    #
+    # 而这次探测必须放在子 shell `( )` 里，不能用 `{ }`。`:` 是 POSIX
+    # special builtin，规范规定它的重定向失败时非交互式 shell 必须直接退出，
+    # 而 `{ }` 是当前 shell 的复合命令、不隔离这个退出 —— 于是没有控制终端时
+    # dash 会在这一行把整个 bootstrap.sh 杀掉，`!! zsh failed` 后面连原因都
+    # 印不出来，omz 再被依赖级联跳过（插件与联想补全就此从没被安装）。
+    # macOS 的 /bin/sh 是 bash 3.2，它不遵守这条，所以本机永远看不到。
+    elif (: </dev/tty) 2>/dev/null; then
         dot_prompt "Change your default shell to $_dot_zsh_path? [y/N]"
         read -r _dot_answer </dev/tty || _dot_answer=''
     else
         dot_skip 'no terminal available to ask; not changing the default shell'
-        dot_tip "run 'chsh -s $_dot_zsh_path' yourself, or re-run with DOT_SET_DEFAULT_SHELL=1"
+        dot_tip "run 'chsh -s $_dot_zsh_path' yourself when on an interactive machine"
+        dot_tip '  or re-run with DOT_SET_DEFAULT_SHELL=1 to change it without asking'
         return 1
     fi
 
