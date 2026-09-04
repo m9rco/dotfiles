@@ -71,11 +71,22 @@ ok_if() {
 }
 
 # 文件权限的八进制。BSD 与 GNU 的 stat 参数不同名。
+#
+# 先试 GNU 的 -c，再回退到 BSD 的 -f —— 顺序不能反。GNU 的 -f 不是「格式」
+# 而是「文件系统信息」，它会先把 overlayfs 的块数与 inode 数打到 stdout、
+# 之后才因认不出 '%Lp' 而失败。于是「失败就回退」的写法在 Linux 上拿到的是
+# 那堆文件系统信息而不是权限位（CI 实测：want 755，got 'File: "…/fzf"'）。
+# 判据因此必须是「输出像不像八进制权限」，不能只看退出码。
 file_mode() {
-    if stat -f '%Lp' "$1" 2>/dev/null; then
-        return 0
-    fi
-    stat -c '%a' "$1" 2>/dev/null
+    _fm=$(stat -c '%a' "$1" 2>/dev/null)
+    case "$_fm" in
+        '' | *[!0-7]*) ;;
+        *)
+            printf '%s\n' "$_fm"
+            return 0
+            ;;
+    esac
+    stat -f '%Lp' "$1" 2>/dev/null
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
