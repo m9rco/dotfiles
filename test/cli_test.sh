@@ -340,9 +340,17 @@ out=$(env PATH="$FIX/nodl:/usr/bin:/bin" sh -c '
     mkdir -p "$1/nodl"
     for t in sh printf grep sed cat mktemp rm mkdir chmod find ls date dirname \
         basename tr cut head env uname id ln readlink mv cp wc od dd sort uniq \
-        stty tar gzip apt-get; do
+        stty tar gzip; do
         p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$1/nodl/$t" 2>/dev/null
     done
+    # 替身包管理器。这条用例测的是「没有下载器」，不该依赖真实包管理器 ——
+    # 而 PATH 被收窄成只有 $nodl 后，探测找不到任何包管理器就会直接报
+    # "no supported package manager found" 并退出，断言永远拿不到该看的输出。
+    # 之前这里是给真实的 apt-get 做符号链接，于是只在 Debian 族成立：
+    # RHEL 上没有 apt-get，链接建不起来，这条用例就红（CI 的 Rocky 9 job
+    # 实测如此）。同 $ZBIN 与 $NOZSH 两处已有的替身，写死一个假的。
+    printf "#!/bin/sh\nexit 0\n" >"$1/nodl/apt-get"
+    chmod +x "$1/nodl/apt-get"
     mkdir -p "$1/cfg/cli"
     printf "%s\n" "$2" >"$1/cfg/cli/tools.txt"
     : >"$1/install.log"
