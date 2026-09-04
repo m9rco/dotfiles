@@ -118,17 +118,23 @@ github.com 时用 `DOT_NO_GITHUB_RELEASE=1` 直接关掉 —— 不关也不会�
 
 ## 默认 shell
 
-`zsh` 模块会问一次是否把默认 shell 改成 zsh。三种情况不会问：
+`zsh` 模块会问一次是否把默认 shell 改成 zsh。两种情况不会问：
 
 - 已经是 zsh —— 跳过。
-- headless（SSH / CI / 容器）—— 默认不改。会话中途换 shell 风险高。
-- 没有终端可问（`curl … | sh` 且 `/dev/tty` 也打不开）—— 不改，并说明原因。
+- 触达不到终端（CI、容器、`curl … | sh` 且 `/dev/tty` 也打不开）—— 不改，
+  并说明原因。会话中途替无人值守的机器换 shell 风险太高。
 
-无人值守要改就用显式开关，它同时越过 headless 限制、也不再询问：
+SSH 会话**会**照常询问：SSH 进一台新机器做初始配置正是最需要改默认 shell 的
+场合，而那时终端前有人。
+
+无人值守要改就用显式开关，它既不询问、也不受上面第二条限制：
 
 ```sh
 DOT_SET_DEFAULT_SHELL=1 ./bootstrap.sh --only zsh
 ```
+
+`chsh` 自己失败（容器里 PAM 要密码、LDAP/SSSD 账户不允许改）不会让模块失败 ——
+zsh 与配置都已就位，只是默认 shell 没变，照提示手工跑一次 `chsh -s` 即可。
 
 **这一步很重要**：本仓库只提供 zsh 配置，不提供 bash 配置。默认 shell 还是
 bash 的话，工具会照常装上、但 `Ctrl-R`（fzf/atuin）、starship prompt、别名

@@ -322,6 +322,35 @@ else
     printf 'no diffutils dependency in bootstrap code: ok\n'
 fi
 
+# special builtin 不得在 `{ }` 里带重定向 —— 用 `( )`。
+#
+# POSIX 规定 special builtin（: . eval exec export readonly set shift times
+# trap unset）的重定向失败时，非交互式 shell 必须直接退出。`{ }` 是当前
+# shell 的复合命令、不隔离这个退出，`( )` 才隔离。
+#
+# 这条与上面的 diffutils 检查同构，只是绿灯的方向相反：那条是「debian 有
+# cmp 所以容器 job 全绿」，这条是「macOS 的 /bin/sh 是 bash 3.2、不遵守这
+# 条规定，所以本机全绿」。实际踩过的形态是探测控制终端存在与否：
+#
+#   elif { : </dev/tty; } 2>/dev/null; then     # dash 在此杀掉整个进程
+#   elif (: </dev/tty) 2>/dev/null; then        # 正确：退出被关在子 shell 里
+#
+# 后果比崩溃本身更难查：bootstrap.sh 死在半路，`!! zsh failed` 后面没有任何
+# 原因（错误信息本该由被杀掉的那段代码打印），下游模块再被依赖级联静默跳过。
+_special_builtin_redir=$(grep -nE \
+    '\{[[:space:]]*(:|\.|eval|exec|export|readonly|set|shift|times|trap|unset)[[:space:]]+[^;]*[<>]' \
+    lib/*.sh modules/*/module.sh platform/*.sh bin/* bootstrap.sh test/*.sh 2>/dev/null |
+    grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true)
+if [ -n "$_special_builtin_redir" ]; then
+    printf 'FAILED: special builtins must not be redirected inside { } — use ( ):\n'
+    printf '%s\n' "$_special_builtin_redir" | sed 's/^/  /'
+    printf '  POSIX: a redirection error on a special builtin exits a non-interactive shell.\n'
+    printf '  { } does not contain that exit; dash kills the whole script. bash 3.2 (macOS sh) does not.\n'
+    _rc=1
+else
+    printf 'no redirected special builtins inside { }: ok\n'
+fi
+
 printf '\n'
 if [ "$_rc" = 0 ]; then
     printf 'lint: all checks passed\n'
