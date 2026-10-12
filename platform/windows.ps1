@@ -290,3 +290,235 @@ function Get-DotDocumentsDir {
     }
     return $docs
 }
+
+# ---------------------------------------------------------------- Windows Terminal
+#
+# settings.json 里的字体/配色属于「配置内容」，真源放
+# config/windows-terminal/settings.json；这里只放「怎么把那份内容并进用户已有的
+# 设置」——与字体、profile 的分层保持一致。
+
+# 现有 Windows Terminal settings.json 的位置。稳定版、预览版、以及非打包安装
+# （scoop/zip）都查一遍，只返回实际存在的文件；一个都没有就返回空数组。
+function Get-DotWindowsTerminalSettingsPaths {
+    $paths = @()
+    if (-not $env:LOCALAPPDATA) { return $paths }
+
+    foreach ($pkg in @(
+            'Microsoft.WindowsTerminal_8wekyb3d8bbwe',
+            'Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe')) {
+        $candidate = Join-Path $env:LOCALAPPDATA "Packages\$pkg\LocalState\settings.json"
+        if (Test-Path -LiteralPath $candidate) { $paths += $candidate }
+    }
+
+    $unpackaged = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json'
+    if (Test-Path -LiteralPath $unpackaged) { $paths += $unpackaged }
+
+    return $paths
+}
+
+# 属性是否存在。StrictMode -Version Latest 下访问不存在的属性会抛异常，
+# 而 settings.json 是用户文件，字段可有可无（schemes、profiles 都可能缺）。
+function Test-DotJsonProperty {
+    param(
+        [Parameter(Mandatory = $true)][AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ($null -eq $Object) { return $false }
+    # 用索引器而不是 .PSObject.Properties.Name -contains：StrictMode 下对空对象
+    # 做属性名枚举会抛「property 'Name' cannot be found」。
+    return ($null -ne $Object.PSObject.Properties[$Name])
+}
+
+# 去掉 JSONC 注释（// 与 /* */），保留字符串字面量里的内容。
+# 逐字符扫描而不是用正则 —— 字符串里的 // 是合法内容，正则会把它们也吃掉。
+# 5.1 的 ConvertFrom-Json 不接受注释，而 Windows Terminal 的 settings.json 允许注释。
+function Remove-DotJsonComments {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $sb = New-Object System.Text.StringBuilder
+    $len = $Text.Length
+    $i = 0
+    $inString = $false
+    $escaped = $false
+
+    while ($i -lt $len) {
+        $c = $Text[$i]
+        $nextChar = [char]0
+        if ($i + 1 -lt $len) { $nextChar = $Text[$i + 1] }
+
+        if ($inString) {
+            [void]$sb.Append($c)
+            if ($escaped) {
+                $escaped = $false
+            }
+            elseif ($c -eq '\') {
+                $escaped = $true
+            }
+            elseif ($c -eq '"') {
+                $inString = $false
+            }
+            $i++
+            continue
+        }
+
+        if ($c -eq '"') {
+            $inString = $true
+            [void]$sb.Append($c)
+            $i++
+            continue
+        }
+
+        # 行注释：跳到行尾，换行本身保留
+        if ($c -eq '/' -and $nextChar -eq '/') {
+            while ($i -lt $len -and $Text[$i] -ne "`n") { $i++ }
+            continue
+        }
+
+        # 块注释：跳到闭合的 */
+        if ($c -eq '/' -and $nextChar -eq '*') {
+            $i += 2
+            while ($i -lt $len) {
+                if ($Text[$i] -eq '*' -and ($i + 1 -lt $len) -and $Text[$i + 1] -eq '/') { break }
+                $i++
+            }
+            $i += 2
+            continue
+        }
+
+        [void]$sb.Append($c)
+        $i++
+    }
+
+    return $sb.ToString()
+}
+
+# 解析可能带注释的 JSON。先直接解析，失败再去注释重试。
+function ConvertFrom-DotJson {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    try {
+        return ($Text | ConvertFrom-Json)
+    }
+    catch {
+        $stripped = Remove-DotJsonComments -Text $Text
+        return ($stripped | ConvertFrom-Json)
+    }
+}
+
+# 把 config/windows-terminal/settings.json（fragment）并进一个 WT settings.json。
+#
+# 语义刻意保守，避免与用户已经做过的调整打架：
+#   schemes           按 name 去重后追加（同名不覆盖）
+#   profiles.defaults 只补缺失的键，用户设过的一律不动
+#   defaultProfile    仅当当前还指向旧版 Windows PowerShell 时才迁移到 PowerShell 7
+#
+# 幂等：无变化则不写、不备份。写前备份 —— 重写会丢注释，原文留在备份里。
+function Merge-DotWindowsTerminalSettings {
+    param(
+        [Parameter(Mandatory = $true)][string]$SettingsPath,
+        [Parameter(Mandatory = $true)][string]$FragmentPath
+    )
+
+    if (-not (Test-Path -LiteralPath $FragmentPath)) {
+        Write-DotError "terminal fragment not found: $FragmentPath"
+        return $false
+    }
+
+    $raw = Get-Content -LiteralPath $SettingsPath -Raw -ErrorAction SilentlyContinue
+    if ($null -eq $raw) {
+        Write-DotError "cannot read $SettingsPath"
+        return $false
+    }
+
+    $settings = $null
+    try {
+        $settings = ConvertFrom-DotJson -Text $raw
+    }
+    catch {
+        Write-DotError "cannot parse ${SettingsPath} as JSON: $_"
+        Write-DotTip 'leaving the file untouched'
+        return $false
+    }
+
+    $fragment = ConvertFrom-DotJson -Text (Get-Content -LiteralPath $FragmentPath -Raw)
+    $changed = $false
+
+    # --- schemes ---
+    if (Test-DotJsonProperty -Object $fragment -Name 'schemes') {
+        if (-not (Test-DotJsonProperty -Object $settings -Name 'schemes')) {
+            $settings | Add-Member -NotePropertyName 'schemes' -NotePropertyValue @() -Force
+        }
+        $existing = @()
+        foreach ($s in @($settings.schemes)) {
+            if (Test-DotJsonProperty -Object $s -Name 'name') { $existing += $s.name }
+        }
+        foreach ($scheme in @($fragment.schemes)) {
+            if ($existing -contains $scheme.name) {
+                Write-DotSkip "color scheme already present: $($scheme.name)"
+                continue
+            }
+            $settings.schemes = @($settings.schemes) + $scheme
+            $changed = $true
+            Write-DotInfo "adding color scheme: $($scheme.name)"
+        }
+    }
+
+    # --- profiles.defaults ---
+    $fragmentDefaults = $null
+    if ((Test-DotJsonProperty -Object $fragment -Name 'profiles') -and
+        (Test-DotJsonProperty -Object $fragment.profiles -Name 'defaults')) {
+        $fragmentDefaults = $fragment.profiles.defaults
+    }
+    if ($null -ne $fragmentDefaults) {
+        if (-not (Test-DotJsonProperty -Object $settings -Name 'profiles')) {
+            $settings | Add-Member -NotePropertyName 'profiles' -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+        if (-not (Test-DotJsonProperty -Object $settings.profiles -Name 'defaults')) {
+            $settings.profiles | Add-Member -NotePropertyName 'defaults' -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+        foreach ($prop in $fragmentDefaults.PSObject.Properties) {
+            $key = $prop.Name
+            if ($null -ne $settings.profiles.defaults.PSObject.Properties[$key]) {
+                Write-DotSkip "terminal default already set, keeping it: $key"
+                continue
+            }
+            $settings.profiles.defaults | Add-Member -NotePropertyName $key -NotePropertyValue $prop.Value -Force
+            $changed = $true
+            Write-DotInfo "setting terminal default: $key"
+        }
+    }
+
+    # --- defaultProfile：只做「旧版 Windows PowerShell -> PowerShell 7」的迁移 ---
+    $legacyWindowsPs = '{61c54bbd-c2c6-5271-96e7-009a87ff44bf}'
+    if ((Test-DotJsonProperty -Object $fragment -Name 'defaultProfile') -and
+        (Test-DotJsonProperty -Object $settings -Name 'defaultProfile') -and
+        $settings.defaultProfile -eq $legacyWindowsPs) {
+        $settings.defaultProfile = $fragment.defaultProfile
+        $changed = $true
+        Write-DotInfo 'default terminal profile: Windows PowerShell -> PowerShell 7'
+    }
+
+    if (-not $changed) {
+        Write-DotSkip "terminal settings already up to date: $SettingsPath"
+        return $true
+    }
+
+    if ($script:DotDryRun) {
+        Write-DotInfo "[dry-run] would update $SettingsPath"
+        return $true
+    }
+
+    if (-not (Backup-DotPath $SettingsPath)) { return $false }
+
+    $json = $settings | ConvertTo-Json -Depth 32
+    try {
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [IO.File]::WriteAllText($SettingsPath, $json, $utf8)
+        Write-DotSuccess "updated $SettingsPath"
+        return $true
+    }
+    catch {
+        Write-DotError "failed to write ${SettingsPath}: $_"
+        return $false
+    }
+}

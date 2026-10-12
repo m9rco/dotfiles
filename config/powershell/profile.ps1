@@ -33,24 +33,44 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 if (Get-Module -ListAvailable -Name PSReadLine) {
     Import-Module PSReadLine
 
+    # Emacs 键位：macOS/Linux 上的默认，Ctrl-A/E/F/B 等行为可预期。
+    Set-PSReadLineOption -EditMode Emacs
+
     Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 
+    # Tab 出菜单补全而不是逐项循环 —— 与 zsh 的 menu-complete 对齐
+    Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+
+    # 按词移动/删除。Unix 终端里是 Alt-B/F 与 Ctrl-W；Windows 键盘上更顺手的
+    # 是 Ctrl+方向键与 Ctrl+Backspace，两种都给上，免得切平台时肌肉记忆打架。
+    Set-PSReadLineKeyHandler -Key Ctrl+LeftArrow -Function BackwardWord
+    Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord
+    Set-PSReadLineKeyHandler -Key Ctrl+Backspace -Function BackwardDeleteWord
+
+    # Ctrl-D 退出、Ctrl-L 清屏、Ctrl-Z 撤销：与 Unix 习惯一致
+    Set-PSReadLineKeyHandler -Key 'Ctrl+d' -Function DeleteCharOrExit
+    Set-PSReadLineKeyHandler -Key 'Ctrl+l' -Function ClearScreen
+    Set-PSReadLineKeyHandler -Key 'Ctrl+z' -Function Undo
+
+    Set-PSReadLineOption -HistoryNoDuplicates
+    Set-PSReadLineOption -HistorySearchCursorMovesToEnd
+    Set-PSReadLineOption -MaximumHistoryCount 10000
+    # 关闭蜂鸣 —— 在 Windows Terminal 上它会走系统提示音，很吵。
+    Set-PSReadLineOption -BellStyle None
+
     # 行内预测（PSReadLine 2.1+）。旧版本没有这些参数，失败就跳过。
+    # HistoryAndPlugin 额外纳入 PSFzf 等插件提供的候选，比只吃历史更全。
     try {
-        Set-PSReadLineOption -PredictionSource History -ErrorAction Stop
+        Set-PSReadLineOption -PredictionSource HistoryAndPlugin -ErrorAction Stop
         Set-PSReadLineOption -PredictionViewStyle InlineView -ErrorAction Stop
     }
     catch {
         # PSReadLine 太旧，没有预测功能。这是可接受的降级，不是错误 ——
         # 显式写一句 Write-Verbose 而不是留空 catch，好让意图可见。
+        # 输出被重定向、控制台不支持 VT 时也会走到这里。
         Write-Verbose "PSReadLine prediction unavailable: $_"
     }
-
-    Set-PSReadLineOption -HistoryNoDuplicates
-    Set-PSReadLineOption -HistorySearchCursorMovesToEnd
-    # Ctrl-D 退出，与 Unix 习惯一致
-    Set-PSReadLineKeyHandler -Key 'Ctrl+d' -Function DeleteCharOrExit
 }
 
 # ---------------------------------------------------------------- starship
@@ -74,6 +94,12 @@ if (Get-Command zoxide -CommandType Application -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell --cmd z) -join "`n" })
 }
 
+# Terminal-Icons：给 Get-ChildItem 的输出加文件类型图标（需要 Nerd Font）。
+# 缺模块时静默跳过 —— 图标只是装饰，不该影响 shell 启动。
+if (Get-Module -ListAvailable -Name Terminal-Icons) {
+    Import-Module Terminal-Icons -ErrorAction SilentlyContinue
+}
+
 # fzf：用 fd 作为文件来源
 if (Get-Command fzf -CommandType Application -ErrorAction SilentlyContinue) {
     if (Get-Command fd -CommandType Application -ErrorAction SilentlyContinue) {
@@ -81,7 +107,19 @@ if (Get-Command fzf -CommandType Application -ErrorAction SilentlyContinue) {
     }
     $env:FZF_DEFAULT_OPTS = '--height 40% --layout=reverse --border --info=inline'
 
-    # PSFzf 提供 Ctrl-T / Ctrl-R 绑定；没装就只有 fzf 命令本身可用
+    # 补全器（Ctrl-T 选文件、Alt-C 跳目录）的预览。预览程序缺失时干脆不设，
+    # 免得 fzf 右侧出现一整块报错输出。
+    if (Get-Command bat -CommandType Application -ErrorAction SilentlyContinue) {
+        $env:FZF_CTRL_T_OPTS = '--preview "bat --style=numbers --color=always --line-range :500 {}"'
+    }
+    if (Get-Command eza -CommandType Application -ErrorAction SilentlyContinue) {
+        if (Get-Command fd -CommandType Application -ErrorAction SilentlyContinue) {
+            $env:FZF_ALT_C_COMMAND = 'fd --type d --hidden --follow --exclude .git'
+        }
+        $env:FZF_ALT_C_OPTS = '--preview "eza --tree --level=2 --icons {}"'
+    }
+
+    # PSFzf 提供 Ctrl-T / Ctrl-R / Alt-C 绑定；没装就只有 fzf 命令本身可用
     if (Get-Module -ListAvailable -Name PSFzf) {
         Import-Module PSFzf
         Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r'
